@@ -32,7 +32,10 @@ export class SheetsRepository {
   constructor(
     private readonly spreadsheetId: string,
     private readonly getAccessToken: () => string,
-    private readonly fetcher: typeof fetch = fetch,
+    // Calling a detached browser fetch as `this.fetcher()` gives it the
+    // repository instance as `this`, which some browsers reject as an
+    // "Illegal invocation". Keep the native call bound to globalThis.
+    private readonly fetcher: typeof fetch = (...args) => globalThis.fetch(...args),
   ) {}
 
   private async request<T>(path: string, init?: RequestInit): Promise<T> {

@@ -19,6 +19,25 @@ function jsonResponse(body: unknown, status = 200): Response {
 }
 
 describe('SheetsRepository', () => {
+  it('calls the native fetch with the browser global as its receiver', async () => {
+    const originalFetch = globalThis.fetch;
+    const receiverAwareFetch = vi.fn(function (this: unknown) {
+      if (this !== globalThis) throw new TypeError('Illegal invocation');
+      return Promise.resolve(jsonResponse(batchBody));
+    }) as unknown as typeof fetch;
+    globalThis.fetch = receiverAwareFetch;
+
+    try {
+      const repository = new SheetsRepository('sheet-id', () => 'token');
+      await expect(repository.listCharacters()).resolves.toMatchObject({
+        characters: [{ name: '褪せ人' }],
+      });
+      expect(receiverAwareFetch).toHaveBeenCalledOnce();
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
   it('batch loads and joins characters and classes', async () => {
     const fetcher = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse(batchBody));
     const repository = new SheetsRepository('sheet-id', () => 'token', fetcher);
