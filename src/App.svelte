@@ -2,6 +2,7 @@
   import { readConfig } from './lib/config';
   import { DataValidationError } from './lib/domain';
   import { authorize, revoke } from './lib/googleAuth';
+  import { pickSpreadsheet } from './lib/googlePicker';
   import { SheetApiError, SheetsRepository } from './lib/sheetsRepository';
   import type { CharacterInput, CharacterViewModel, ClassRow } from './lib/types';
 
@@ -42,7 +43,16 @@
     clearMessages();
     busy = true;
     try {
-      accessToken = await authorize(config.googleClientId);
+      const token = await authorize(config.googleClientId);
+      const picked = await pickSpreadsheet({
+        accessToken: token,
+        apiKey: config.googleApiKey,
+        appId: config.googleAppId,
+      });
+      if (picked.id !== config.spreadsheetId) {
+        throw new Error(`「${picked.name || '選択したファイル'}」は、この記録庫用のスプレッドシートではありません。`);
+      }
+      accessToken = token;
       await refresh();
       successMessage = 'Google スプレッドシートに接続しました。';
     } catch (error) {
@@ -151,9 +161,11 @@
     <section class="setup-panel" aria-labelledby="setup-title">
       <p class="eyebrow">SETUP REQUIRED</p>
       <h2 id="setup-title">Google Sheets の設定が必要です</h2>
-      <p>プロジェクト直下に <code>.env.local</code> を作り、次の2項目を設定してください。</p>
+      <p>プロジェクト直下に <code>.env.local</code> を作り、次の4項目を設定してください。</p>
       <pre>VITE_GOOGLE_CLIENT_ID=...
-VITE_GOOGLE_SPREADSHEET_ID=...</pre>
+VITE_GOOGLE_SPREADSHEET_ID=...
+VITE_GOOGLE_API_KEY=...
+VITE_GOOGLE_APP_ID=...</pre>
       <p class="muted">詳しいGoogle Cloudとスプレッドシートの準備手順はREADMEにあります。</p>
     </section>
   {:else if !accessToken}
@@ -161,11 +173,11 @@ VITE_GOOGLE_SPREADSHEET_ID=...</pre>
       <div class="welcome-copy">
         <p class="eyebrow">SHARED ARCHIVE</p>
         <h2 id="welcome-title">冒険の記録を、<br />ひとつの場所に。</h2>
-        <p>卓メンバーに共有されたGoogleスプレッドシートから、キャラクターを閲覧・保存します。</p>
+        <p>卓メンバーに共有されたGoogleスプレッドシートを選択し、そのファイルだけからキャラクターを閲覧・保存します。</p>
         <button class="button button--primary" type="button" disabled={busy} on:click={connect}>
           {busy ? '接続しています…' : 'Googleに接続'}
         </button>
-        <p class="fine-print">認証情報はブラウザのメモリにのみ保持され、ページを閉じると破棄されます。</p>
+        <p class="fine-print">選択した1ファイルだけへの権限を要求します。認証情報はブラウザのメモリにのみ保持されます。</p>
       </div>
       <div class="rune" aria-hidden="true"><span></span></div>
     </section>

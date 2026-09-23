@@ -4,14 +4,15 @@ Google スプレッドシートをデータストアとして使う、ELDEN RING
 
 ## できること
 
-- GoogleアカウントでSheets APIの利用を認可
+- Googleアカウントで選択した1ファイルだけの利用を認可
+- Google Pickerで、この記録庫用のスプレッドシートを明示的に選択
 - 共有スプレッドシートからキャラクターと素性を一括取得
 - `classId`を使った外部キー参照
 - キャラクターの作成・更新
 - シートに保存しない派生値「ガード」の計算
 - 401、403、シート構成不正、参照先欠落の表示
 
-アクセストークンはブラウザのメモリにだけ保持します。ページを閉じたり再読み込みしたりすると、Googleへの再接続が必要です。
+OAuthスコープには、ファイル単位でアクセスを許可する非機密スコープ `https://www.googleapis.com/auth/drive.file` を使用します。アクセストークンはブラウザのメモリにだけ保持します。ページを閉じたり再読み込みしたりすると、Googleへの再接続とファイル選択が必要です。
 
 ## 1. スプレッドシートを作る
 
@@ -26,13 +27,21 @@ Google スプレッドシートをデータストアとして使う、ELDEN RING
 ## 2. Google Cloudを設定する
 
 1. [Google Cloud Console](https://console.cloud.google.com/)でプロジェクトを作成します。
-2. 「APIとサービス」から **Google Sheets API** を有効にします。
-3. OAuth同意画面を構成します。概念実証では公開ステータスを「テスト」にし、卓メンバーをテストユーザーとして追加します。
-4. OAuthクライアントIDを「ウェブ アプリケーション」として作成します。
-5. 「承認済みの JavaScript 生成元」に開発用の `http://localhost:5173` と、公開先の `https://<user>.github.io` を追加します。生成元にはパスを含めません。
-6. 発行されたクライアントIDを控えます。クライアントシークレットはこのアプリでは使用しません。
+2. 「APIとサービス」→「ライブラリ」から **Google Sheets API** と **Google Picker API** を有効にします。
+3. プロジェクトの「ダッシュボード」または「プロジェクト情報」に表示される数字だけの **プロジェクト番号**を控えます。これがGoogle PickerのApp IDです。
+4. OAuth同意画面を構成します。概念実証では公開ステータスを「テスト」にし、卓メンバーをテストユーザーとして追加します。
+5. OAuthクライアントIDを「ウェブ アプリケーション」として作成します。
+6. 「承認済みの JavaScript 生成元」に開発用の `http://localhost:5173` と、公開先の `https://<user>.github.io` を追加します。生成元にはパスを含めません。
+7. 発行されたクライアントIDを控えます。クライアントシークレットはこのアプリでは使用しません。
+8. 「認証情報」→「認証情報を作成」→「APIキー」で、Google Picker用のAPIキーを作成します。
+9. APIキーの「アプリケーションの制限」を **ウェブサイト** にし、`http://localhost:5173/*` と `https://<user>.github.io/*` を許可します。
+10. APIキーの「APIの制限」を **キーを制限** にし、**Google Picker API**だけを選択します。
 
-このアプリは `https://www.googleapis.com/auth/spreadsheets` スコープを要求します。テストユーザー以外へ一般公開する場合は、GoogleのOAuth審査やプライバシーポリシーが必要になる可能性があります。
+このアプリは `drive.file` スコープでGoogle Pickerに表示されたファイルをユーザー自身に選ばせます。選択されたIDが設定済みのSpreadsheet IDと一致した場合だけ、Sheets APIを呼び出します。別のファイルを選択すると接続を拒否します。
+
+### 以前の全スプレッドシート権限を解除する
+
+旧バージョンを一度でも認可したアカウントは、広い `spreadsheets` スコープの許可がGoogleアカウント側に残っている可能性があります。[Googleアカウントのサードパーティ接続](https://myaccount.google.com/connections)を開き、このアプリへの既存アクセスを一度削除してから、新しいバージョンで再接続してください。
 
 ## 3. ローカルで動かす
 
@@ -48,13 +57,15 @@ Copy-Item .env.example .env.local
 ```dotenv
 VITE_GOOGLE_CLIENT_ID=発行されたクライアントID
 VITE_GOOGLE_SPREADSHEET_ID=共有スプレッドシートID
+VITE_GOOGLE_API_KEY=Google Picker用APIキー
+VITE_GOOGLE_APP_ID=数字だけのGoogle Cloudプロジェクト番号
 ```
 
 ```sh
 npm run dev
 ```
 
-ブラウザで `http://localhost:5173` を開き、「Googleに接続」を押します。
+ブラウザで `http://localhost:5173` を開き、「Googleに接続」を押します。認可後にGoogle Pickerが開くので、手順1で作成した共有スプレッドシートを選択します。
 
 ## 4. GitHub Pagesへ公開する
 
@@ -62,10 +73,12 @@ npm run dev
 2. **Settings → Secrets and variables → Actions → Variables** に次のRepository variablesを作ります。
    - `GOOGLE_CLIENT_ID`
    - `GOOGLE_SPREADSHEET_ID`
+   - `GOOGLE_API_KEY`
+   - `GOOGLE_APP_ID`
 3. デフォルトブランチを`main`にし、pushします。
 4. `Deploy to GitHub Pages`ワークフローがテスト、型チェック、ビルド、デプロイを行います。
 
-クライアントIDとSpreadsheet IDはブラウザに配布される識別子であり、秘密鍵ではありません。アクセストークンやクライアントシークレットはGitHubへ登録しないでください。
+4つの値はすべてブラウザへ配布されます。APIキーは必ずHTTPリファラーとGoogle Picker APIで制限してください。アクセストークンやクライアントシークレットはGitHubへ登録しないでください。
 
 ## 開発コマンド
 
@@ -109,4 +122,5 @@ npm run preview   # 本番ビルドのローカル確認
 - 同時更新の競合検出はなく、最後に保存した内容が優先されます。
 - 削除、履歴、オフライン対応はありません。
 - スプレッドシートを直接編集するときも列名・ID・数値制約を守る必要があります。
-- 書き込みスコープは、そのユーザーがアクセス可能なスプレッドシート全体を対象にします。本番化ではGoogle Pickerと`drive.file`スコープ、またはApps Script等の専用APIも比較検討してください。
+- `drive.file`はユーザーがGoogle Pickerで選択したファイルをアプリから操作可能にします。セルやシート単位へさらに細かくOAuth権限を限定することはできません。
+- Pickerで別ファイルを選んだ場合、その選択はGoogle側ではユーザーによる許可になりますが、本アプリは固定のSpreadsheet IDと一致しないファイルを読み書きしません。

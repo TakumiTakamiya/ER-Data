@@ -1,5 +1,5 @@
 const GIS_URL = 'https://accounts.google.com/gsi/client';
-const SHEETS_SCOPE = 'https://www.googleapis.com/auth/spreadsheets';
+const DRIVE_FILE_SCOPE = 'https://www.googleapis.com/auth/drive.file';
 
 let scriptPromise: Promise<void> | null = null;
 
@@ -30,7 +30,9 @@ export async function authorize(clientId: string): Promise<string> {
 
     const client = google.accounts.oauth2.initTokenClient({
       client_id: clientId,
-      scope: SHEETS_SCOPE,
+      scope: DRIVE_FILE_SCOPE,
+      // Do not fold a previously granted broad Sheets scope into this token.
+      include_granted_scopes: false,
       callback: (response) => {
         if (response.error || !response.access_token) {
           reject(new Error(response.error_description || 'Google認可が完了しませんでした。'));
