@@ -80,6 +80,25 @@ npm run dev
 
 4つの値はすべてブラウザへ配布されます。APIキーは必ずHTTPリファラーとGoogle Picker APIで制限してください。アクセストークンやクライアントシークレットはGitHubへ登録しないでください。
 
+## Cloudflare Workersで静的サイトを確認する
+
+将来のD1移行に備え、同じSvelteアプリをCloudflare Workers Static Assetsでも配信できます。現時点では静的ホスティングだけを使用し、D1・認証API・データ移行はまだ構成しません。
+
+現在の確認用URL: <https://er-data.takumitakamiya.workers.dev>
+
+```sh
+npx wrangler login
+npm run cf:deploy
+```
+
+ローカルでCloudflare配信構成を確認する場合は次を使います。
+
+```sh
+npm run cf:dev
+```
+
+Google Sheets版として動かす間は、通常のViteビルドと同じ4つの`VITE_GOOGLE_*`環境変数が必要です。Cloudflare版の動作確認後も、移行が完了するまではGitHub Pagesを停止しません。
+
 ## 開発コマンド
 
 ```sh

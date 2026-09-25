@@ -4,5 +4,5 @@ dist/
 .env.local
 .env.*.local
 *.log
+.wrangler/
 .DS_Store
-
