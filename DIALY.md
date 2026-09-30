@@ -9,7 +9,7 @@
 - 公開先: `https://er-data.takumitakamiya.workers.dev`
 - Worker: `er-data`
 - D1: `er-data-db`
-- 最終デプロイVersion ID: `86889e59-e0c2-4dc1-84c4-12d1eb2ee33d`
+- 最終デプロイVersion ID: `d72b877c-6d79-4da5-a048-19502e946d4a`
 - ブランチ: `main`（`origin/main`を追跡）
 - 認証・管理者判定: Cloudflare Accessのみ。メールアドレスやユーザー情報はコード/D1に保存しない。
 - ローカルと本番D1には `0008_add_equipment_management.sql` まで適用済み。
