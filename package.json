@@ -26,5 +26,8 @@
     "vite": "^7.0.0",
     "vitest": "^3.2.0",
     "wrangler": "^4.140.0"
+  },
+  "dependencies": {
+    "html-to-image": "^1.11.13"
   }
 }

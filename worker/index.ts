@@ -1,6 +1,6 @@
 import { abilityKeys, type AbilityKey } from '../src/lib/types';
 
-interface D1Result<T = Record<string, unknown>> { results: T[]; success: boolean; meta?: { last_row_id?: number } }
+interface D1Result<T = Record<string, unknown>> { results: T[]; success: boolean; meta?: { last_row_id?: number; changes?: number } }
 interface D1Statement { bind(...values: unknown[]): D1Statement; first<T = Record<string, unknown>>(): Promise<T | null>; all<T = Record<string, unknown>>(): Promise<D1Result<T>>; run(): Promise<D1Result> }
 interface D1Database { prepare(sql: string): D1Statement; batch<T = Record<string, unknown>>(statements: D1Statement[]): Promise<D1Result<T>[]> }
 interface Env { DB: D1Database; ASSETS: { fetch(request: Request): Promise<Response> } }
@@ -51,7 +51,11 @@ const placeholders = (count: number) => Array.from({ length: count }, () => '?')
 
 const characterSelect = `SELECT c.*, a.name adventure_name, o.name origin_name,
   o.initial_vigor, o.initial_mind, o.initial_endurance, o.initial_strength,
-  o.initial_dexterity, o.initial_intelligence, o.initial_faith, o.initial_arcane
+  o.initial_dexterity, o.initial_intelligence, o.initial_faith, o.initial_arcane,
+  COALESCE((SELECT quantity FROM adventure_special_items WHERE adventure_id=c.adventure_id AND special_item_id=5),0) golden_seeds,
+  COALESCE((SELECT quantity FROM adventure_special_items WHERE adventure_id=c.adventure_id AND special_item_id=6),0) sacred_tears,
+  COALESCE((SELECT quantity FROM adventure_special_items WHERE adventure_id=c.adventure_id AND special_item_id=7),0) memory_stones,
+  COALESCE((SELECT quantity FROM adventure_special_items WHERE adventure_id=c.adventure_id AND special_item_id=8),0) talisman_pouches
   FROM characters c JOIN adventures a ON a.id=c.adventure_id JOIN origins o ON o.id=c.origin_id`;
 
 function mapCharacter(row: Record<string, unknown>) {
@@ -60,13 +64,78 @@ function mapCharacter(row: Record<string, unknown>) {
     return [key, { initial, growth, bonus, total: initial + growth + bonus }];
   }));
   return { id: row.id, name: row.name, level: row.level, adventureId: row.adventure_id, adventureName: row.adventure_name,
-    originId: row.origin_id, originName: row.origin_name, runes: row.runes, materialPoints: row.material_points, abilities };
+    originId: row.origin_id, originName: row.origin_name, runes: row.runes, materialPoints: row.material_points, abilities,
+    resources:{maxHpModifier:Number(row.max_hp_modifier),maxFpModifier:Number(row.max_fp_modifier),maxBlessingModifier:Number(row.max_blessing_modifier),flaskTotalModifier:Number(row.flask_total_modifier),crimsonFlaskHealModifier:Number(row.crimson_flask_heal_modifier),crimsonFlaskAllocation:Number(row.crimson_flask_allocation),ceruleanFlaskHealModifier:Number(row.cerulean_flask_heal_modifier),ceruleanFlaskAllocation:Number(row.cerulean_flask_allocation)},
+    adventureResources:{goldenSeeds:Number(row.golden_seeds),sacredTears:Number(row.sacred_tears),memoryStones:Number(row.memory_stones),talismanPouches:Number(row.talisman_pouches)} };
 }
 
 function characterValues(input: Record<string, unknown>) {
   const growth = asObject(input.growth); const bonus = asObject(input.bonus);
+  const resources = asObject(input.resources);
   return [integer(input, 'adventureId', 1), integer(input, 'originId', 1), text(input, 'name'), integer(input, 'level'), integer(input, 'runes'), integer(input, 'materialPoints'),
-    ...abilityKeys.map((key) => integer(growth, key)), ...abilityKeys.map((key) => signedInteger(bonus, key))];
+    ...abilityKeys.map((key) => integer(growth, key)), ...abilityKeys.map((key) => signedInteger(bonus, key)),
+    signedInteger(resources,'maxHpModifier'),signedInteger(resources,'maxFpModifier'),signedInteger(resources,'maxBlessingModifier'),signedInteger(resources,'flaskTotalModifier'),
+    signedInteger(resources,'crimsonFlaskHealModifier'),integer(resources,'crimsonFlaskAllocation'),signedInteger(resources,'ceruleanFlaskHealModifier'),integer(resources,'ceruleanFlaskAllocation')];
+}
+
+function goldenSeedIncrease(quantity:number){return quantity>=36?5:quantity>=26?4:quantity>=18?3:quantity>=11?2:quantity>=5?1:0;}
+
+async function validateFlaskAllocation(db:D1Database,adventureId:number,values:unknown[]){
+  const row=await db.prepare('SELECT COALESCE(quantity,0) quantity FROM adventure_special_items WHERE adventure_id=? AND special_item_id=5').bind(adventureId).first();
+  const total=Math.max(0,Math.min(10,4+goldenSeedIncrease(Number(row?.quantity??0))+Number(values[25])));
+  if(Number(values[27])+Number(values[29])>total)throw new HttpError(400,'VALIDATION_ERROR','緋色と青色の聖杯瓶の振り分け数が合計値を超えています。');
+}
+
+const numberValue=(value:unknown)=>Number(value);
+const stringValue=(value:unknown)=>String(value??'');
+
+async function getCharacterDetail(db:D1Database,id:number){
+  const row=await db.prepare(`${characterSelect} WHERE c.id=?`).bind(id).first();
+  if(!row)throw new HttpError(404,'NOT_FOUND','キャラクターが見つかりません。');
+  const adventureId=numberValue(row.adventure_id);
+  const [weaponRows,shieldRows,armorRows,talismanRows,skillRows,effectRows,skillWeaponRows,skillShieldRows,weaponSkillRows,categorySkillRows,shieldSkillRows,armorSkillRows,setSkillRows,learnedSetRows,setMemberRows,learnedSkillRows,weaponOptions,shieldOptions,armorOptions,talismanOptions,setOptions]=await Promise.all([
+    db.prepare(`SELECT cs.id slot_id,cs.position,cs.reinforcement_level,w.*,wc.name category_name,wc.attack_cost,wc.one_hand_damage_1,wc.one_hand_damage_2,wc.one_hand_damage_3,wc.one_hand_damage_4,wc.one_hand_damage_5,wc.two_hand_damage_1,wc.two_hand_damage_2,wc.two_hand_damage_3,wc.two_hand_damage_4,wc.two_hand_damage_5,wc.guard_cost,wc.two_hand_physical_guard,wc.two_hand_phenomenon_guard FROM character_weapon_slots cs JOIN weapons w ON w.id=cs.weapon_id JOIN weapon_categories wc ON wc.id=w.weapon_category_id WHERE cs.character_id=? ORDER BY wc.name,cs.position`).bind(id).all(),
+    db.prepare(`SELECT cs.id slot_id,cs.position,cs.reinforcement_level,s.*,sc.name category_name FROM character_shield_slots cs JOIN shields s ON s.id=cs.shield_id JOIN shield_categories sc ON sc.id=s.shield_category_id WHERE cs.character_id=? ORDER BY cs.position`).bind(id).all(),
+    db.prepare(`SELECT a.*,s.name armor_set_name,s.series_effect FROM character_equipped_armors ca JOIN armors a ON a.id=ca.armor_id LEFT JOIN armor_sets s ON s.id=a.armor_set_id WHERE ca.character_id=?`).bind(id).all(),
+    db.prepare(`SELECT ct.id slot_id,ct.position,t.* FROM character_equipped_talismans ct JOIN talismans t ON t.id=ct.talisman_id WHERE ct.character_id=? ORDER BY ct.position`).bind(id).all(),
+    db.prepare('SELECT * FROM skills ORDER BY name').all(),
+    db.prepare('SELECT skill_id,rank,effect FROM skill_rank_effects ORDER BY rank').all(),
+    db.prepare('SELECT link.skill_id,c.id,c.name FROM skill_weapon_categories link JOIN weapon_categories c ON c.id=link.weapon_category_id ORDER BY c.name').all(),
+    db.prepare('SELECT link.skill_id,c.id,c.name FROM skill_shield_categories link JOIN shield_categories c ON c.id=link.shield_category_id ORDER BY c.name').all(),
+    db.prepare('SELECT weapon_id,skill_id FROM weapon_skills').all(),
+    db.prepare('SELECT weapon_category_id,skill_id FROM weapon_category_skills').all(),
+    db.prepare('SELECT shield_id,skill_id FROM shield_skills').all(),
+    db.prepare('SELECT armor_id,skill_id FROM armor_skills').all(),
+    db.prepare('SELECT armor_set_id,skill_id FROM armor_set_skills').all(),
+    db.prepare(`SELECT ls.skill_set_id,s.name,s.notes FROM character_learned_skill_sets ls JOIN skill_sets s ON s.id=ls.skill_set_id WHERE ls.character_id=? ORDER BY s.name`).bind(id).all(),
+    db.prepare('SELECT skill_set_id,skill_id,position FROM skill_set_members ORDER BY position').all(),
+    db.prepare('SELECT id row_id,skill_id,position,rank FROM character_equipped_skills WHERE character_id=? ORDER BY position').bind(id).all(),
+    db.prepare(`SELECT aw.weapon_id id,w.name,w.weight,w.power_modifier,w.required_strength,w.required_dexterity,w.required_intelligence,w.required_faith,w.required_arcane,wc.name category_name,aw.quantity FROM adventure_weapons aw JOIN weapons w ON w.id=aw.weapon_id JOIN weapon_categories wc ON wc.id=w.weapon_category_id WHERE aw.adventure_id=? AND aw.quantity>0 ORDER BY wc.name,w.name`).bind(adventureId).all(),
+    db.prepare(`SELECT ash.shield_id id,s.name,s.weight,s.required_strength,s.required_dexterity,s.required_intelligence,s.required_faith,s.required_arcane,sc.name category_name,ash.quantity FROM adventure_shields ash JOIN shields s ON s.id=ash.shield_id JOIN shield_categories sc ON sc.id=s.shield_category_id WHERE ash.adventure_id=? AND ash.quantity>0 ORDER BY sc.name,s.name`).bind(adventureId).all(),
+    db.prepare(`SELECT aa.armor_id id,a.name,a.weight,a.armor_slot slot,aa.quantity FROM adventure_armors aa JOIN armors a ON a.id=aa.armor_id WHERE aa.adventure_id=? AND aa.quantity>0 ORDER BY a.armor_slot,a.name`).bind(adventureId).all(),
+    db.prepare(`SELECT at.talisman_id id,t.name,t.weight,t.effect,at.quantity FROM adventure_talismans at JOIN talismans t ON t.id=at.talisman_id WHERE at.adventure_id=? AND at.quantity>0 ORDER BY t.name`).bind(adventureId).all(),
+    db.prepare(`SELECT ass.skill_set_id id,s.name,s.notes,ass.quantity FROM adventure_skill_sets ass JOIN skill_sets s ON s.id=ass.skill_set_id WHERE ass.adventure_id=? AND ass.quantity>0 ORDER BY s.name`).bind(adventureId).all()
+  ]);
+  const skillMap=new Map<number,Record<string,unknown>>();
+  for(const skill of skillRows.results){
+    const skillId=numberValue(skill.id);
+    const effects=effectRows.results.filter(effect=>numberValue(effect.skill_id)===skillId).sort((a,b)=>numberValue(a.rank)-numberValue(b.rank)).map(effect=>stringValue(effect.effect));
+    skillMap.set(skillId,{id:skillId,name:stringValue(skill.name),classification:stringValue(skill.classification),timing:stringValue(skill.timing),target:stringValue(skill.target),cost:stringValue(skill.cost),maxUses:skill.max_uses===null?null:numberValue(skill.max_uses),rankEffects:effects,weaponCategories:skillWeaponRows.results.filter(link=>numberValue(link.skill_id)===skillId).map(link=>({id:numberValue(link.id),name:stringValue(link.name)})),shieldCategories:skillShieldRows.results.filter(link=>numberValue(link.skill_id)===skillId).map(link=>({id:numberValue(link.id),name:stringValue(link.name)}))});
+  }
+  const equipmentSkill=(skillId:number)=>{const skill=skillMap.get(skillId)!;return{id:skill.id,name:skill.name,classification:skill.classification,timing:skill.timing,cost:skill.cost,effect:(skill.rankEffects as string[])[0]??''};};
+  const skillsFor=(links:Record<string,unknown>[],fk:string,value:number)=>links.filter(link=>numberValue(link[fk])===value).map(link=>equipmentSkill(numberValue(link.skill_id)));
+  const categoryMap=new Map<number,Record<string,unknown>>();
+  for(const weapon of weaponRows.results){
+    const categoryId=numberValue(weapon.weapon_category_id);
+    if(!categoryMap.has(categoryId))categoryMap.set(categoryId,{id:categoryId,name:stringValue(weapon.category_name),attackCost:numberValue(weapon.attack_cost),oneHandDamage:[1,2,3,4,5].map(hit=>stringValue(weapon[`one_hand_damage_${hit}`])),twoHandDamage:[1,2,3,4,5].map(hit=>stringValue(weapon[`two_hand_damage_${hit}`])),guardCost:numberValue(weapon.guard_cost),physicalGuard:stringValue(weapon.two_hand_physical_guard),phenomenonGuard:stringValue(weapon.two_hand_phenomenon_guard),skills:skillsFor(categorySkillRows.results,'weapon_category_id',categoryId),weapons:[]});
+    (categoryMap.get(categoryId)!.weapons as Record<string,unknown>[]).push({slotId:numberValue(weapon.slot_id),position:numberValue(weapon.position),reinforcementLevel:numberValue(weapon.reinforcement_level),id:numberValue(weapon.id),name:stringValue(weapon.name),weight:numberValue(weapon.weight),powerModifier:stringValue(weapon.power_modifier),skills:skillsFor(weaponSkillRows.results,'weapon_id',numberValue(weapon.id))});
+  }
+  const armorFor=(slot:string)=>{const armor=armorRows.results.find(item=>item.armor_slot===slot);if(!armor)return null;const setId=armor.armor_set_id===null?null:numberValue(armor.armor_set_id);return{id:numberValue(armor.id),name:stringValue(armor.name),slot:stringValue(armor.armor_slot),weight:numberValue(armor.weight),physicalCut:numberValue(armor.physical_cut),phenomenonCut:numberValue(armor.phenomenon_cut),poise:numberValue(armor.poise),armorSet:setId===null?null:{id:setId,name:stringValue(armor.armor_set_name),seriesEffect:stringValue(armor.series_effect),skills:skillsFor(setSkillRows.results,'armor_set_id',setId)},skills:skillsFor(armorSkillRows.results,'armor_id',numberValue(armor.id))};};
+  const fullSkill=(skillId:number)=>skillMap.get(skillId)!;
+  const learnedSkillSets=learnedSetRows.results.map(set=>({id:numberValue(set.skill_set_id),name:stringValue(set.name),notes:stringValue(set.notes),skills:setMemberRows.results.filter(member=>numberValue(member.skill_set_id)===numberValue(set.skill_set_id)).map(member=>fullSkill(numberValue(member.skill_id)))}));
+  const learnedSkills=learnedSkillRows.results.map(item=>{const skill=fullSkill(numberValue(item.skill_id));const highestRank=Math.max(1,...(skill.rankEffects as string[]).map((effect,index)=>stringValue(effect).trim()?index+1:0));return{...skill,rowId:numberValue(item.row_id),position:numberValue(item.position),rank:numberValue(item.rank),highestRank};});
+  const requirements=(item:Record<string,unknown>)=>({strength:numberValue(item.required_strength),dexterity:numberValue(item.required_dexterity),intelligence:numberValue(item.required_intelligence),faith:numberValue(item.required_faith),arcane:numberValue(item.required_arcane)});
+  return {...mapCharacter(row),equipment:{weaponCategories:[...categoryMap.values()],shields:shieldRows.results.map(shield=>({slotId:numberValue(shield.slot_id),position:numberValue(shield.position),reinforcementLevel:numberValue(shield.reinforcement_level),id:numberValue(shield.id),name:stringValue(shield.name),categoryName:stringValue(shield.category_name),weight:numberValue(shield.weight),guardCost:numberValue(shield.guard_cost),physicalGuard:stringValue(shield.physical_guard),phenomenonGuard:stringValue(shield.phenomenon_guard),skills:skillsFor(shieldSkillRows.results,'shield_id',numberValue(shield.id))})),armors:{head:armorFor('HEAD'),body:armorFor('BODY')},talismans:talismanRows.results.map(item=>({slotId:numberValue(item.slot_id),position:numberValue(item.position),id:numberValue(item.id),name:stringValue(item.name),weight:numberValue(item.weight),effect:stringValue(item.effect)}))},inventoryOptions:{weapons:weaponOptions.results.map(item=>({id:numberValue(item.id),name:stringValue(item.name),quantity:numberValue(item.quantity),weight:numberValue(item.weight),categoryName:stringValue(item.category_name),requirements:requirements(item),kind:'weapon',powerModifier:stringValue(item.power_modifier),skills:skillsFor(weaponSkillRows.results,'weapon_id',numberValue(item.id))})),shields:shieldOptions.results.map(item=>({id:numberValue(item.id),name:stringValue(item.name),quantity:numberValue(item.quantity),weight:numberValue(item.weight),categoryName:stringValue(item.category_name),requirements:requirements(item),kind:'shield',skills:skillsFor(shieldSkillRows.results,'shield_id',numberValue(item.id))})),armors:armorOptions.results.map(item=>({id:numberValue(item.id),name:stringValue(item.name),quantity:numberValue(item.quantity),weight:numberValue(item.weight),slot:stringValue(item.slot)})),talismans:talismanOptions.results.map(item=>({id:numberValue(item.id),name:stringValue(item.name),quantity:numberValue(item.quantity),weight:numberValue(item.weight),effect:stringValue(item.effect)})),skillSets:setOptions.results.map(item=>({id:numberValue(item.id),name:stringValue(item.name),notes:stringValue(item.notes),quantity:numberValue(item.quantity)}))},learnedSkillSets,learnedSkills};
 }
 
 async function assertReferences(db: D1Database, pairs: [string, number][]) {
@@ -155,22 +224,115 @@ async function characters(db: D1Database, request: Request, url: URL) {
   const input=await body(request);const adventureId=integer(input,'adventureId',1);const originId=integer(input,'originId',1);
   await assertReferences(db,[['adventures',adventureId],['origins',originId]]);
   const origin=await db.prepare('SELECT initial_level FROM origins WHERE id=?').bind(originId).first();
-  const creationInput={...input,adventureId,originId,level:Number(origin!.initial_level),runes:0,materialPoints:0,growth:Object.fromEntries(abilityKeys.map(key=>[key,0])),bonus:Object.fromEntries(abilityKeys.map(key=>[key,0]))};
+  const creationInput={...input,adventureId,originId,level:Number(origin!.initial_level),runes:0,materialPoints:0,growth:Object.fromEntries(abilityKeys.map(key=>[key,0])),bonus:Object.fromEntries(abilityKeys.map(key=>[key,0])),resources:{maxHpModifier:0,maxFpModifier:0,maxBlessingModifier:0,flaskTotalModifier:0,crimsonFlaskHealModifier:0,crimsonFlaskAllocation:0,ceruleanFlaskHealModifier:0,ceruleanFlaskAllocation:0}};
   const values=characterValues(creationInput);
-  const cols=['adventure_id','origin_id','name','level','runes','material_points',...abilityKeys.map(k=>`${k}_growth`),...abilityKeys.map(k=>`${k}_bonus`)];
+  const cols=['adventure_id','origin_id','name','level','runes','material_points',...abilityKeys.map(k=>`${k}_growth`),...abilityKeys.map(k=>`${k}_bonus`),'max_hp_modifier','max_fp_modifier','max_blessing_modifier','flask_total_modifier','crimson_flask_heal_modifier','crimson_flask_allocation','cerulean_flask_heal_modifier','cerulean_flask_allocation'];
   const result=await db.prepare(`INSERT INTO characters(${cols.join(',')}) VALUES(${placeholders(cols.length)})`).bind(...values).run();
-  return json(mapCharacter((await db.prepare(`${characterSelect} WHERE c.id=?`).bind(result.meta?.last_row_id).first())!),201);
+  const characterId=Number(result.meta?.last_row_id);
+  await db.batch([
+    db.prepare(`INSERT INTO character_weapon_slots(character_id,weapon_id,position,reinforcement_level) SELECT ?,weapon_id,position,0 FROM origin_initial_weapons WHERE origin_id=? ORDER BY position`).bind(characterId,originId),
+    db.prepare(`INSERT INTO character_shield_slots(character_id,shield_id,position,reinforcement_level) SELECT ?,shield_id,position,0 FROM origin_initial_shields WHERE origin_id=? ORDER BY position`).bind(characterId,originId),
+    db.prepare(`INSERT INTO character_equipped_armors(character_id,armor_slot,armor_id) SELECT ?,armor_slot,armor_id FROM origin_initial_armors WHERE origin_id=?`).bind(characterId,originId),
+    db.prepare(`INSERT INTO character_learned_skill_sets(character_id,skill_set_id) SELECT ?,skill_set_id FROM origin_initial_skill_sets WHERE origin_id=?`).bind(characterId,originId)
+  ]);
+  return json(await getCharacterDetail(db,characterId),201);
 }
 
 async function characterById(db:D1Database,request:Request,path:string) {
   const id=idFrom(path,/^\/api\/characters\/(\d+)$/);
-  if(request.method==='GET'){const row=await db.prepare(`${characterSelect} WHERE c.id=?`).bind(id).first();if(!row)throw new HttpError(404,'NOT_FOUND','キャラクターが見つかりません。');return json(mapCharacter(row));}
+  if(request.method==='GET')return json(await getCharacterDetail(db,id));
   if(request.method!=='PUT')throw new HttpError(405,'METHOD_NOT_ALLOWED','未対応の操作です。');
-  const input=await body(request);const values=characterValues(input);await assertReferences(db,[['adventures',values[0] as number],['origins',values[1] as number]]);
-  const cols=['adventure_id','origin_id','name','level','runes','material_points',...abilityKeys.map(k=>`${k}_growth`),...abilityKeys.map(k=>`${k}_bonus`)];
+  const input=await body(request);const values=characterValues(input);await assertReferences(db,[['adventures',values[0] as number],['origins',values[1] as number]]);await validateFlaskAllocation(db,values[0] as number,values);
+  const cols=['adventure_id','origin_id','name','level','runes','material_points',...abilityKeys.map(k=>`${k}_growth`),...abilityKeys.map(k=>`${k}_bonus`),'max_hp_modifier','max_fp_modifier','max_blessing_modifier','flask_total_modifier','crimson_flask_heal_modifier','crimson_flask_allocation','cerulean_flask_heal_modifier','cerulean_flask_allocation'];
   if(!await db.prepare('SELECT id FROM characters WHERE id=?').bind(id).first())throw new HttpError(404,'NOT_FOUND','キャラクターが見つかりません。');
   await db.prepare(`UPDATE characters SET ${cols.map(c=>`${c}=?`).join(',')} WHERE id=?`).bind(...values,id).run();
-  return json(mapCharacter((await db.prepare(`${characterSelect} WHERE c.id=?`).bind(id).first())!));
+  return json(await getCharacterDetail(db,id));
+}
+
+async function characterContext(db:D1Database,id:number){
+  const row=await db.prepare(`${characterSelect} WHERE c.id=?`).bind(id).first();
+  if(!row)throw new HttpError(404,'NOT_FOUND','キャラクターが見つかりません。');
+  return{row,adventureId:numberValue(row.adventure_id),abilities:Object.fromEntries(abilityKeys.map(key=>[key,numberValue(row[`initial_${key}`])+numberValue(row[`${key}_growth`])+numberValue(row[`${key}_bonus`])])) as Record<AbilityKey,number>};
+}
+
+function validateRequirements(item:Record<string,unknown>,abilities:Record<AbilityKey,number>){
+  const missing=(['strength','dexterity','intelligence','faith','arcane'] as AbilityKey[]).filter(key=>abilities[key]<numberValue(item[`required_${key}`]));
+  if(missing.length)throw new HttpError(400,'REQUIREMENTS_NOT_MET','必要能力値を満たしていません。');
+}
+
+async function equipWeaponOrShield(db:D1Database,request:Request,characterId:number,kind:'weapon'|'shield'){
+  const input=await body(request),itemId=integer(input,'itemId',1),context=await characterContext(db,characterId);
+  const plural=kind==='weapon'?'weapons':'shields',link=`adventure_${plural}`,fk=`${kind}_id`,slots=`character_${kind}_slots`;
+  const item=await db.prepare(`SELECT * FROM ${plural} WHERE id=?`).bind(itemId).first();if(!item)throw new HttpError(404,'NOT_FOUND','装備が見つかりません。');validateRequirements(item,context.abilities);
+  const results=await db.batch([
+    db.prepare(`INSERT INTO ${slots}(character_id,${fk},position,reinforcement_level) SELECT ?,?,COALESCE((SELECT MAX(position)+1 FROM ${slots} WHERE character_id=?),1),0 WHERE EXISTS(SELECT 1 FROM ${link} WHERE adventure_id=? AND ${fk}=? AND quantity>0)`).bind(characterId,itemId,characterId,context.adventureId,itemId),
+    db.prepare(`DELETE FROM ${link} WHERE adventure_id=? AND ${fk}=? AND quantity=1`).bind(context.adventureId,itemId),
+    db.prepare(`UPDATE ${link} SET quantity=quantity-1 WHERE adventure_id=? AND ${fk}=? AND quantity>1`).bind(context.adventureId,itemId)
+  ]);
+  if(Number(results[0].meta?.changes??0)!==1)throw new HttpError(409,'OUT_OF_STOCK','冒険の所持品に対象の装備がありません。');return json(await getCharacterDetail(db,characterId));
+}
+
+async function unequipWeaponOrShield(db:D1Database,characterId:number,slotId:number,kind:'weapon'|'shield'){
+  const context=await characterContext(db,characterId),plural=kind==='weapon'?'weapons':'shields',link=`adventure_${plural}`,fk=`${kind}_id`,slots=`character_${kind}_slots`;
+  const slot=await db.prepare(`SELECT ${fk} item_id FROM ${slots} WHERE id=? AND character_id=?`).bind(slotId,characterId).first();if(!slot)throw new HttpError(404,'NOT_FOUND','装備枠が見つかりません。');const itemId=numberValue(slot.item_id);
+  await db.batch([db.prepare(`DELETE FROM ${slots} WHERE id=? AND character_id=?`).bind(slotId,characterId),db.prepare(`INSERT INTO ${link}(adventure_id,${fk},quantity) VALUES(?,?,1) ON CONFLICT(adventure_id,${fk}) DO UPDATE SET quantity=quantity+1`).bind(context.adventureId,itemId)]);return json(await getCharacterDetail(db,characterId));
+}
+
+async function changeArmor(db:D1Database,request:Request,characterId:number,slotName:string){
+  const slot=slotName.toUpperCase();if(!['HEAD','BODY'].includes(slot))throw new HttpError(404,'NOT_FOUND','防具部位が見つかりません。');const input=await body(request),armorId=integer(input,'itemId',1),context=await characterContext(db,characterId);
+  const armor=await db.prepare('SELECT id,armor_slot FROM armors WHERE id=?').bind(armorId).first();if(!armor||armor.armor_slot!==slot)throw new HttpError(400,'INVALID_SLOT','防具の部位が一致しません。');
+  const old=await db.prepare('SELECT armor_id FROM character_equipped_armors WHERE character_id=? AND armor_slot=?').bind(characterId,slot).first();if(numberValue(old?.armor_id)===armorId)return json(await getCharacterDetail(db,characterId));
+  const statements=[db.prepare(`INSERT OR REPLACE INTO character_equipped_armors(character_id,armor_slot,armor_id) SELECT ?,?,? WHERE EXISTS(SELECT 1 FROM adventure_armors WHERE adventure_id=? AND armor_id=? AND quantity>0)`).bind(characterId,slot,armorId,context.adventureId,armorId),db.prepare('DELETE FROM adventure_armors WHERE adventure_id=? AND armor_id=? AND quantity=1').bind(context.adventureId,armorId),db.prepare('UPDATE adventure_armors SET quantity=quantity-1 WHERE adventure_id=? AND armor_id=? AND quantity>1').bind(context.adventureId,armorId)];
+  if(old)statements.push(db.prepare('INSERT INTO adventure_armors(adventure_id,armor_id,quantity) VALUES(?,?,1) ON CONFLICT(adventure_id,armor_id) DO UPDATE SET quantity=quantity+1').bind(context.adventureId,numberValue(old.armor_id)));
+  const results=await db.batch(statements);if(Number(results[0].meta?.changes??0)!==1)throw new HttpError(409,'OUT_OF_STOCK','冒険の所持品に対象の防具がありません。');return json(await getCharacterDetail(db,characterId));
+}
+
+async function removeArmor(db:D1Database,characterId:number,slotName:string){
+  const slot=slotName.toUpperCase();if(!['HEAD','BODY'].includes(slot))throw new HttpError(404,'NOT_FOUND','防具部位が見つかりません。');const context=await characterContext(db,characterId),old=await db.prepare('SELECT armor_id FROM character_equipped_armors WHERE character_id=? AND armor_slot=?').bind(characterId,slot).first();if(!old)throw new HttpError(404,'NOT_FOUND','防具が装備されていません。');
+  await db.batch([db.prepare('DELETE FROM character_equipped_armors WHERE character_id=? AND armor_slot=?').bind(characterId,slot),db.prepare('INSERT INTO adventure_armors(adventure_id,armor_id,quantity) VALUES(?,?,1) ON CONFLICT(adventure_id,armor_id) DO UPDATE SET quantity=quantity+1').bind(context.adventureId,numberValue(old.armor_id))]);return json(await getCharacterDetail(db,characterId));
+}
+
+async function equipTalisman(db:D1Database,request:Request,characterId:number){
+  const input=await body(request),itemId=integer(input,'itemId',1),context=await characterContext(db,characterId),count=await db.prepare('SELECT COUNT(*) count FROM character_equipped_talismans WHERE character_id=?').bind(characterId).first(),max=1+numberValue(context.row.talisman_pouches);if(numberValue(count?.count)>=max)throw new HttpError(400,'LIMIT_EXCEEDED','タリスマンの装備数が上限に達しています。');
+  const results=await db.batch([db.prepare(`INSERT INTO character_equipped_talismans(character_id,talisman_id,position) SELECT ?,?,COALESCE((SELECT MAX(position)+1 FROM character_equipped_talismans WHERE character_id=?),1) WHERE EXISTS(SELECT 1 FROM adventure_talismans WHERE adventure_id=? AND talisman_id=? AND quantity>0)`).bind(characterId,itemId,characterId,context.adventureId,itemId),db.prepare('DELETE FROM adventure_talismans WHERE adventure_id=? AND talisman_id=? AND quantity=1').bind(context.adventureId,itemId),db.prepare('UPDATE adventure_talismans SET quantity=quantity-1 WHERE adventure_id=? AND talisman_id=? AND quantity>1').bind(context.adventureId,itemId)]);if(Number(results[0].meta?.changes??0)!==1)throw new HttpError(409,'OUT_OF_STOCK','冒険の所持品に対象のタリスマンがありません。');return json(await getCharacterDetail(db,characterId));
+}
+
+async function unequipTalisman(db:D1Database,characterId:number,slotId:number){
+  const context=await characterContext(db,characterId),slot=await db.prepare('SELECT talisman_id FROM character_equipped_talismans WHERE id=? AND character_id=?').bind(slotId,characterId).first();if(!slot)throw new HttpError(404,'NOT_FOUND','タリスマンが見つかりません。');await db.batch([db.prepare('DELETE FROM character_equipped_talismans WHERE id=? AND character_id=?').bind(slotId,characterId),db.prepare('INSERT INTO adventure_talismans(adventure_id,talisman_id,quantity) VALUES(?,?,1) ON CONFLICT(adventure_id,talisman_id) DO UPDATE SET quantity=quantity+1').bind(context.adventureId,numberValue(slot.talisman_id))]);return json(await getCharacterDetail(db,characterId));
+}
+
+async function learnSkillSet(db:D1Database,request:Request,characterId:number){
+  const input=await body(request),setId=integer(input,'itemId',1),context=await characterContext(db,characterId);if(await db.prepare('SELECT 1 ok FROM character_learned_skill_sets WHERE character_id=? AND skill_set_id=?').bind(characterId,setId).first())throw new HttpError(409,'ALREADY_EXISTS','このスキルセットは習得済みです。');
+  const results=await db.batch([db.prepare(`INSERT INTO character_learned_skill_sets(character_id,skill_set_id) SELECT ?,? WHERE EXISTS(SELECT 1 FROM adventure_skill_sets WHERE adventure_id=? AND skill_set_id=? AND quantity>0)`).bind(characterId,setId,context.adventureId,setId),db.prepare('DELETE FROM adventure_skill_sets WHERE adventure_id=? AND skill_set_id=? AND quantity=1').bind(context.adventureId,setId),db.prepare('UPDATE adventure_skill_sets SET quantity=quantity-1 WHERE adventure_id=? AND skill_set_id=? AND quantity>1').bind(context.adventureId,setId)]);if(Number(results[0].meta?.changes??0)!==1)throw new HttpError(409,'OUT_OF_STOCK','冒険の所持品に対象のスキルセットがありません。');return json(await getCharacterDetail(db,characterId));
+}
+
+async function learnSkill(db:D1Database,request:Request,characterId:number){
+  const input=await body(request),skillId=integer(input,'itemId',1),context=await characterContext(db,characterId),count=await db.prepare('SELECT COUNT(*) count FROM character_equipped_skills WHERE character_id=?').bind(characterId).first(),max=2+numberValue(context.row.memory_stones);if(numberValue(count?.count)>=max)throw new HttpError(400,'LIMIT_EXCEEDED','スキルの習得数が上限に達しています。');
+  const allowed=await db.prepare(`SELECT 1 ok FROM character_learned_skill_sets ls JOIN skill_set_members m ON m.skill_set_id=ls.skill_set_id WHERE ls.character_id=? AND m.skill_id=? LIMIT 1`).bind(characterId,skillId).first();if(!allowed)throw new HttpError(400,'INVALID_REFERENCE','習得済みスキルセットに含まれないスキルです。');if(await db.prepare('SELECT 1 ok FROM character_equipped_skills WHERE character_id=? AND skill_id=?').bind(characterId,skillId).first())throw new HttpError(409,'ALREADY_EXISTS','このスキルは習得済みです。');await db.prepare(`INSERT INTO character_equipped_skills(character_id,skill_id,position,rank) VALUES(?,?,COALESCE((SELECT MAX(position)+1 FROM character_equipped_skills WHERE character_id=?),1),1)`).bind(characterId,skillId,characterId).run();return json(await getCharacterDetail(db,characterId));
+}
+
+async function changeLearnedSkill(db:D1Database,request:Request,characterId:number,rowId:number){
+  const current=await db.prepare('SELECT skill_id,rank FROM character_equipped_skills WHERE id=? AND character_id=?').bind(rowId,characterId).first();if(!current)throw new HttpError(404,'NOT_FOUND','スキルが見つかりません。');if(request.method==='DELETE'){await db.prepare('DELETE FROM character_equipped_skills WHERE id=? AND character_id=?').bind(rowId,characterId).run();return json(await getCharacterDetail(db,characterId));}
+  if(request.method!=='PUT')throw new HttpError(405,'METHOD_NOT_ALLOWED','未対応の操作です。');const next=numberValue(current.rank)+1,effect=await db.prepare('SELECT effect FROM skill_rank_effects WHERE skill_id=? AND rank=?').bind(numberValue(current.skill_id),next).first();if(next>3||!stringValue(effect?.effect).trim())throw new HttpError(400,'MAX_RANK','これ以上ランクアップできません。');await db.prepare('UPDATE character_equipped_skills SET rank=? WHERE id=? AND character_id=?').bind(next,rowId,characterId).run();return json(await getCharacterDetail(db,characterId));
+}
+
+async function changeWeaponReinforcement(db:D1Database,request:Request,characterId:number,slotId:number){
+  const input=await body(request),reinforcementLevel=integer(input,'reinforcementLevel');
+  const result=await db.prepare('UPDATE character_weapon_slots SET reinforcement_level=? WHERE id=? AND character_id=?').bind(reinforcementLevel,slotId,characterId).run();
+  if(Number(result.meta?.changes??0)!==1)throw new HttpError(404,'NOT_FOUND','武器が見つかりません。');
+  return json(await getCharacterDetail(db,characterId));
+}
+
+async function characterAction(db:D1Database,request:Request,path:string){
+  let match=path.match(/^\/api\/characters\/(\d+)\/(weapons|shields)$/);if(match&&request.method==='POST')return equipWeaponOrShield(db,request,Number(match[1]),match[2]==='weapons'?'weapon':'shield');
+  match=path.match(/^\/api\/characters\/(\d+)\/(weapons|shields)\/(\d+)$/);if(match&&request.method==='DELETE')return unequipWeaponOrShield(db,Number(match[1]),Number(match[3]),match[2]==='weapons'?'weapon':'shield');if(match&&request.method==='PUT'&&match[2]==='weapons')return changeWeaponReinforcement(db,request,Number(match[1]),Number(match[3]));
+  match=path.match(/^\/api\/characters\/(\d+)\/armors\/(head|body)$/);if(match&&request.method==='PUT')return changeArmor(db,request,Number(match[1]),match[2]);if(match&&request.method==='DELETE')return removeArmor(db,Number(match[1]),match[2]);
+  match=path.match(/^\/api\/characters\/(\d+)\/talismans$/);if(match&&request.method==='POST')return equipTalisman(db,request,Number(match[1]));
+  match=path.match(/^\/api\/characters\/(\d+)\/talismans\/(\d+)$/);if(match&&request.method==='DELETE')return unequipTalisman(db,Number(match[1]),Number(match[2]));
+  match=path.match(/^\/api\/characters\/(\d+)\/skill-sets$/);if(match&&request.method==='POST')return learnSkillSet(db,request,Number(match[1]));
+  match=path.match(/^\/api\/characters\/(\d+)\/skills$/);if(match&&request.method==='POST')return learnSkill(db,request,Number(match[1]));
+  match=path.match(/^\/api\/characters\/(\d+)\/skills\/(\d+)$/);if(match)return changeLearnedSkill(db,request,Number(match[1]),Number(match[2]));
+  throw new HttpError(404,'NOT_FOUND','APIが見つかりません。');
 }
 
 async function options(db:D1Database){
@@ -231,8 +393,8 @@ async function skillList(db:D1Database){
 }
 
 async function talismanList(db:D1Database){
-  const rows=await db.prepare('SELECT id,name,effect FROM talismans ORDER BY id').all();
-  return json(rows.results.map(row=>({id:Number(row.id),name:String(row.name),effect:String(row.effect)})));
+  const rows=await db.prepare('SELECT id,name,weight,effect FROM talismans ORDER BY id').all();
+  return json(rows.results.map(row=>({id:Number(row.id),name:String(row.name),weight:Number(row.weight),effect:String(row.effect)})));
 }
 
 async function talismanById(db:D1Database,request:Request,path:string){
@@ -248,7 +410,7 @@ async function talismanById(db:D1Database,request:Request,path:string){
   }
   if(request.method!=='PUT')throw new HttpError(405,'METHOD_NOT_ALLOWED','未対応の操作です。');
   const input=await body(request);
-  await db.prepare('UPDATE talismans SET name=?,effect=? WHERE id=?').bind(text(input,'name'),text(input,'effect'),id).run();
+  await db.prepare('UPDATE talismans SET name=?,weight=?,effect=? WHERE id=?').bind(text(input,'name'),signedInteger(input,'weight'),text(input,'effect'),id).run();
   return json({ok:true});
 }
 
@@ -284,7 +446,7 @@ async function adminCreate(db:D1Database,request:Request,kind:string){
   if(kind==='special-items'){
     statements.push(db.prepare('INSERT INTO special_items(name) VALUES(?)').bind(text(input,'name')));
   } else if(kind==='talismans'){
-    statements.push(db.prepare('INSERT INTO talismans(name,effect) VALUES(?,?)').bind(text(input,'name'),text(input,'effect')));
+    statements.push(db.prepare('INSERT INTO talismans(name,weight,effect) VALUES(?,?,?)').bind(text(input,'name'),signedInteger(input,'weight'),text(input,'effect')));
   } else if(kind==='episodes'){
     const episodeType=text(input,'episodeType').toUpperCase();if(!['MAIN','SIDE'].includes(episodeType))throw new HttpError(400,'VALIDATION_ERROR','エピソード種別が不正です。');
     const episodeNumber=integer(input,'episodeNumber');const validNumber=episodeType==='MAIN'?episodeNumber<=11:episodeNumber>=1&&episodeNumber<=10;if(!validNumber)throw new HttpError(400,'VALIDATION_ERROR',episodeType==='MAIN'?'メインEP番号は0～11です。':'外伝EP番号は1～10です。');
@@ -363,6 +525,7 @@ async function route(request:Request,env:Env){
   if(/^\/api\/adventures\/\d+$/.test(path))return adventureById(env.DB,request,path);
   if(path==='/api/origins'&&request.method==='GET')return origins(env.DB);
   if(path==='/api/characters'&&['GET','POST'].includes(request.method))return characters(env.DB,request,url);
+  if(/^\/api\/characters\/\d+\/.+/.test(path))return characterAction(env.DB,request,path);
   if(/^\/api\/characters\/\d+$/.test(path))return characterById(env.DB,request,path);
   if(path==='/api/admin/options'&&request.method==='GET')return options(env.DB);
   if(path==='/api/admin/armors'&&request.method==='GET')return armorList(env.DB);

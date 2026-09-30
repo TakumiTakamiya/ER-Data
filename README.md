@@ -75,6 +75,12 @@ npx wrangler deploy --dry-run
 - `GET /api/origins`
 - `GET/POST /api/characters`
 - `GET/PUT /api/characters/:id`
+- `POST/DELETE /api/characters/:id/weapons[/:slotId]`
+- `POST/DELETE /api/characters/:id/shields[/:slotId]`
+- `PUT/DELETE /api/characters/:id/armors/:slot`
+- `POST/DELETE /api/characters/:id/talismans[/:slotId]`
+- `POST /api/characters/:id/skill-sets`
+- `POST/PUT/DELETE /api/characters/:id/skills[/:rowId]`
 
 管理API：
 

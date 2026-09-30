@@ -47,6 +47,14 @@ npm run cf:dev
 | GET | `/api/origins` | 素性と初期装備・スキル詳細 |
 | GET/POST | `/api/characters` | キャラクター一覧/作成 |
 | GET/PUT | `/api/characters/:id` | キャラクター詳細/更新 |
+| PUT | `/api/characters/:id/weapons/:slotId` | 装備武器の強化値更新 |
+| POST/DELETE | `/api/characters/:id/weapons[/:slotId]` | 武器装備/解除 |
+| POST/DELETE | `/api/characters/:id/shields[/:slotId]` | 盾装備/解除 |
+| PUT/DELETE | `/api/characters/:id/armors/:slot` | 防具交換/解除 |
+| POST/DELETE | `/api/characters/:id/talismans[/:slotId]` | タリスマン装備/解除 |
+| POST | `/api/characters/:id/skill-sets` | スキルセット習得 |
+| POST | `/api/characters/:id/skills` | スキル習得 |
+| PUT/DELETE | `/api/characters/:id/skills/:rowId` | スキルランクアップ/削除 |
 
 ### 管理API
 

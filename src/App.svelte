@@ -7,17 +7,18 @@
   import ArmorCatalog from './lib/ArmorCatalog.svelte';
   import TalismanCatalog from './lib/TalismanCatalog.svelte';
   import AdventureWorkspace from './lib/AdventureWorkspace.svelte';
+  import CharacterSheet from './lib/CharacterSheet.svelte';
   import { applyCostShortcut, type CostShortcut } from './lib/skillForm';
   import { weaponCategorySizes, withWeaponCategorySize } from './lib/weaponCategoryForm';
   import { combinedCategoryOptions, combinedCategorySelection, splitCategorySelection } from './lib/skillCategorySelection';
   import { deleteJson, getJson, sendJson } from './lib/api';
   import { adminKindForPath, type AdminKind } from './lib/router';
-  import { abilityKeys, type AbilityKey, type AbilityValues, type Adventure, type AdventureDetail, type AdminOptions, type ArmorSetSummary, type CharacterDetail, type CharacterInput, type EpisodeStatus, type Origin, type OriginSkill } from './lib/types';
+  import { abilityKeys, type AbilityKey, type AbilityValues, type Adventure, type AdventureDetail, type AdminOptions, type ArmorSetSummary, type CharacterDetail, type CharacterInput, type CharacterSummary, type EpisodeStatus, type Origin, type OriginSkill } from './lib/types';
 
   const abilityLabels: Record<AbilityKey,string>={vigor:'生命力',mind:'精神力',endurance:'持久力',strength:'筋力',dexterity:'技量',intelligence:'知力',faith:'信仰',arcane:'神秘'};
   const dieFaces=['⚀️','⚁️','⚂️','⚃️','⚄️','⚅️'];
   const emptyAbilities=(value=0):AbilityValues=>Object.fromEntries(abilityKeys.map(k=>[k,value])) as AbilityValues;
-  const emptyCharacter=():CharacterInput=>({name:'',adventureId:0,originId:0,level:1,runes:0,materialPoints:0,growth:emptyAbilities(),bonus:emptyAbilities()});
+  const emptyCharacter=():CharacterInput=>({name:'',adventureId:0,originId:0,level:1,runes:0,materialPoints:0,growth:emptyAbilities(),bonus:emptyAbilities(),resources:{maxHpModifier:0,maxFpModifier:0,maxBlessingModifier:0,flaskTotalModifier:0,crimsonFlaskHealModifier:0,crimsonFlaskAllocation:0,ceruleanFlaskHealModifier:0,ceruleanFlaskAllocation:0}});
   const adminLabels:Record<AdminKind,string>={episodes:'エピソード','special-items':'特別なアイテム',origins:'素性',armors:'防具','armor-sets':'防具セット',weapons:'武器','weapon-categories':'武器カテゴリ',shields:'盾','shield-categories':'盾カテゴリ',talismans:'タリスマン',skills:'スキル','skill-sets':'スキルセット','spirit-ashes':'遺灰'};
   const adminSections=[
     {title:'冒険',items:[['エピソードを追加','/admin/episodes/new','メイン・外伝エピソードを登録'],['特別なアイテムを追加','/admin/special-items/new','冒険で共有するアイテム種別を登録']]},
@@ -30,7 +31,7 @@
 
   let path=window.location.pathname;
   let busy=false,errorMessage='',successMessage='';
-  let adventures:Adventure[]=[],origins:Origin[]=[],characters:CharacterDetail[]=[],armorSets:ArmorSetSummary[]=[],character:CharacterDetail|null=null,adventure:AdventureDetail|null=null,options:AdminOptions|null=null;
+  let adventures:Adventure[]=[],origins:Origin[]=[],characters:CharacterSummary[]=[],armorSets:ArmorSetSummary[]=[],character:CharacterDetail|null=null,adventure:AdventureDetail|null=null,options:AdminOptions|null=null;
   let characterForm=emptyCharacter();
   let viewedSkill:OriginSkill|null=null;
   let adventureForm={name:'',memo:''};
@@ -61,7 +62,7 @@
     if(kind==='origins')return{name:'',initialLevel:10,initial:emptyAbilities(10),skillSetIds:[],weaponIds:[],shieldIds:[],headArmorId:null,bodyArmorId:null};
     if(kind==='episodes')return{name:'',episodeType:'MAIN',episodeNumber:0,maliceLevel:0};
     if(kind==='special-items')return{name:''};
-    if(kind==='talismans')return{name:'',effect:''};
+    if(kind==='talismans')return{name:'',weight:0,effect:''};
     if(kind==='armors')return{name:'',slot:'HEAD',armorSetId:'',weight:0,physicalCut:0,phenomenonCut:0,poise:0,skillIds:[]};
     if(kind==='armor-sets')return{name:'',seriesEffect:'',skillIds:[]};
     if(kind==='weapons')return{name:'',categoryId:'',weight:0,powerModifier:'',requirements:req(),skillIds:[]};
@@ -82,8 +83,11 @@
     try{
       [adventures,origins]=await Promise.all([getJson<Adventure[]>('/api/adventures'),getJson<Origin[]>('/api/origins')]);
       if(path==='/' ){history.replaceState({},'','/characters');path='/characters';}
-      if(path==='/characters')characters=await getJson<CharacterDetail[]>('/api/characters');
-      else if(characterId){character=await getJson<CharacterDetail>(`/api/characters/${characterId}`);if(path.endsWith('/edit'))characterForm=toInput(character);}
+      if(path==='/characters')characters=await getJson<CharacterSummary[]>('/api/characters');
+      else if(characterId){
+        if(path.endsWith('/edit')){history.replaceState({},'',`/characters/${characterId}`);path=`/characters/${characterId}`;}
+        character=await getJson<CharacterDetail>(`/api/characters/${characterId}`);
+      }
       else if(path==='/characters/new')characterForm={...emptyCharacter(),adventureId:adventures[0]?.id??0,originId:origins[0]?.id??0,level:origins[0]?.initialLevel??0};
       else if(adventureId&&adventureEditing){history.replaceState({},'',`/adventures/${adventureId}`);path=`/adventures/${adventureId}`;adventure=await getJson<AdventureDetail>(`/api/adventures/${adventureId}`);}
       else if(adventureId)adventure=await getJson<AdventureDetail>(`/api/adventures/${adventureId}`);
@@ -92,8 +96,14 @@
       if(path==='/admin/armor-sets')armorSets=await getJson<ArmorSetSummary[]>('/api/admin/armor-sets');
     }catch(error){message(error);}finally{busy=false;}
   }
-  function toInput(c:CharacterDetail):CharacterInput{return{name:c.name,adventureId:c.adventureId,originId:c.originId,level:c.level,runes:c.runes,materialPoints:c.materialPoints,growth:Object.fromEntries(abilityKeys.map(k=>[k,c.abilities[k].growth])) as AbilityValues,bonus:Object.fromEntries(abilityKeys.map(k=>[k,c.abilities[k].bonus])) as AbilityValues};}
-  async function saveCharacter(){busy=true;errorMessage='';try{const editing=path.endsWith('/edit');const payload=editing?characterForm:{...characterForm,level:selectedOrigin?.initialLevel??0,runes:0,materialPoints:0,growth:emptyAbilities(),bonus:emptyAbilities()};const saved=await sendJson<CharacterDetail>(editing?`/api/characters/${characterId}`:'/api/characters',editing?'PUT':'POST',payload);go(`/characters/${saved.id}`);}catch(error){message(error);}finally{busy=false;}}
+  async function saveCharacter(){
+    busy=true;errorMessage='';successMessage='';
+    try{
+      const payload={...characterForm,level:selectedOrigin?.initialLevel??0,runes:0,materialPoints:0,growth:emptyAbilities(),bonus:emptyAbilities()};
+      const saved=await sendJson<CharacterDetail>('/api/characters','POST',payload);
+      go(`/characters/${saved.id}`);
+    }catch(error){message(error);}finally{busy=false;}
+  }
   async function saveAdventure(){busy=true;errorMessage='';try{await sendJson(adventureId?`/api/adventures/${adventureId}`:'/api/adventures',adventureId?'PUT':'POST',adventureForm);go('/adventures');}catch(error){message(error);}finally{busy=false;}}
   async function setEpisodeStatus(episodeId:number,status:EpisodeStatus){if(!adventure)return;errorMessage='';try{await sendJson(`/api/adventures/${adventure.id}/episodes/${episodeId}`,'PUT',{status});adventure={...adventure,episodes:adventure.episodes.map(episode=>episode.id===episodeId?{...episode,status}:episode)};}catch(error){message(error);}}
   async function saveAdmin(){if(!adminKind)return;busy=true;errorMessage='';try{await sendJson(`/api/admin/${adminKind}`,'POST',adminForm);successMessage=`${adminLabels[adminKind]}を登録しました。`;adminForm=initialAdmin(adminKind);showRelated=false;options=await getJson<AdminOptions>('/api/admin/options');}catch(error){message(error);}finally{busy=false;}}
@@ -124,15 +134,14 @@
     <div class="toolbar"><div><p class="eyebrow">CHARACTER ARCHIVE</p><h2>キャラクター一覧</h2></div><button class="button button--primary" onclick={()=>go('/characters/new')} disabled={!adventures.length||!origins.length}>新しい記録</button></div>
     {#if !characters.length&&!busy}<section class="empty-state card"><h3>記録はまだありません</h3><p>管理画面で素性を登録し、冒険を作成してから、最初のキャラクターを作成してください。</p><div class="button-row"><button class="button button--quiet" onclick={()=>go('/admin/origins/new')}>素性を登録</button><button class="button button--quiet" onclick={()=>go('/adventures/new')}>冒険を作成</button></div></section>{/if}
     <div class="card-grid">{#each characters as c}<button class="record-card" onclick={()=>go(`/characters/${c.id}`)}><span class="eyebrow">LV. {c.level}</span><strong>{c.name}</strong><span>{c.originName} · {c.adventureName}</span></button>{/each}</div>
-  {:else if path==='/characters/new'||path.endsWith('/edit')}
-    <form class="card form" onsubmit={(e)=>{e.preventDefault();void saveCharacter();}}><div class="panel-heading"><div><p class="eyebrow">CHARACTER RECORD</p><h2>{path.endsWith('/edit')?'キャラクター編集':'キャラクター作成'}</h2></div></div>
-      <div class="form-grid"><label class="field field--wide"><span>名前</span><input bind:value={characterForm.name} required maxlength="80"></label><label class="field"><span>冒険</span><select bind:value={characterForm.adventureId} required>{#each adventures as a}<option value={a.id}>{a.name}</option>{/each}</select></label><label class="field"><span>素性</span><select bind:value={characterForm.originId} required>{#each origins as o}<option value={o.id}>{o.name}</option>{/each}</select></label>{#if path.endsWith('/edit')}<label class="field"><span>レベル</span><input type="number" min="0" bind:value={characterForm.level}></label><label class="field"><span>ルーン</span><input type="number" min="0" bind:value={characterForm.runes}></label><label class="field"><span>素材点</span><input type="number" min="0" bind:value={characterForm.materialPoints}></label>{/if}</div>
-      {#if path.endsWith('/edit')}<h3>能力値</h3><div class="ability-editor">{#each abilityKeys as key}<div class="ability-row"><strong>{abilityLabels[key]}</strong><label>成長値<input type="number" min="0" bind:value={characterForm.growth[key]}></label><label>追加値<input type="number" bind:value={characterForm.bonus[key]}></label></div>{/each}</div>
-      {:else if selectedOrigin}<section class="origin-preview" aria-label="素性の初期情報"><div class="origin-preview__heading"><div><p class="eyebrow">ORIGIN PROFILE</p><h3>{selectedOrigin.name}</h3></div><div class="origin-level"><span>初期レベル</span><strong>{selectedOrigin.initialLevel}</strong></div></div><div class="origin-stats">{#each abilityKeys as key}<div><span>{abilityLabels[key]}</span><strong>{selectedOrigin.initial[key]}</strong></div>{/each}</div><div class="origin-loadout"><section><h4>初期武器</h4><p>{selectedOrigin.weapons.map(item=>item.name).join('、')||'なし'}</p></section><section><h4>初期盾</h4><p>{selectedOrigin.shields.map(item=>item.name).join('、')||'なし'}</p></section><section><h4>初期防具</h4><dl><div><dt>頭</dt><dd>{selectedOrigin.armors.head?.name??'なし'}</dd></div><div><dt>胴体</dt><dd>{selectedOrigin.armors.body?.name??'なし'}</dd></div></dl></section></div><div class="origin-skill-sets"><h4>初期スキルセット</h4>{#if selectedOrigin.skillSets.length}{#each selectedOrigin.skillSets as skillSet}<section class="origin-skill-set"><div><strong>{skillSet.name}</strong>{#if skillSet.notes}<p>{skillSet.notes}</p>{/if}</div><div class="origin-skill-links">{#each skillSet.skills as skill}<button type="button" onclick={()=>viewedSkill=skill}>{skill.name}</button>{/each}</div></section>{/each}{:else}<p class="muted">なし</p>{/if}</div><p class="origin-initial-note">作成時はルーン・素材点・能力値の成長値・追加値がすべて0になります。</p></section>{/if}
+  {:else if path==='/characters/new'}
+    <form class="card form" onsubmit={(e)=>{e.preventDefault();void saveCharacter();}}><div class="panel-heading"><div><p class="eyebrow">CHARACTER RECORD</p><h2>キャラクター作成</h2></div></div>
+      <div class="form-grid"><label class="field field--wide"><span>名前</span><input bind:value={characterForm.name} required maxlength="80"></label><label class="field"><span>冒険</span><select bind:value={characterForm.adventureId} required>{#each adventures as a}<option value={a.id}>{a.name}</option>{/each}</select></label><label class="field"><span>素性</span><select bind:value={characterForm.originId} required>{#each origins as o}<option value={o.id}>{o.name}</option>{/each}</select></label></div>
+      {#if selectedOrigin}<section class="origin-preview" aria-label="素性の初期情報"><div class="origin-preview__heading"><div><p class="eyebrow">ORIGIN PROFILE</p><h3>{selectedOrigin.name}</h3></div><div class="origin-level"><span>初期レベル</span><strong>{selectedOrigin.initialLevel}</strong></div></div><div class="origin-stats">{#each abilityKeys as key}<div><span>{abilityLabels[key]}</span><strong>{selectedOrigin.initial[key]}</strong></div>{/each}</div><div class="origin-loadout"><section><h4>初期武器</h4><p>{selectedOrigin.weapons.map(item=>item.name).join('、')||'なし'}</p></section><section><h4>初期盾</h4><p>{selectedOrigin.shields.map(item=>item.name).join('、')||'なし'}</p></section><section><h4>初期防具</h4><dl><div><dt>頭</dt><dd>{selectedOrigin.armors.head?.name??'なし'}</dd></div><div><dt>胴体</dt><dd>{selectedOrigin.armors.body?.name??'なし'}</dd></div></dl></section></div><div class="origin-skill-sets"><h4>初期スキルセット</h4>{#if selectedOrigin.skillSets.length}{#each selectedOrigin.skillSets as skillSet}<section class="origin-skill-set"><div><strong>{skillSet.name}</strong>{#if skillSet.notes}<p>{skillSet.notes}</p>{/if}</div><div class="origin-skill-links">{#each skillSet.skills as skill}<button type="button" onclick={()=>viewedSkill=skill}>{skill.name}</button>{/each}</div></section>{/each}{:else}<p class="muted">なし</p>{/if}</div><p class="origin-initial-note">作成時はルーン・素材点・能力値の成長値・追加値がすべて0になります。</p></section>{/if}
       <div class="form-actions"><button type="button" class="button button--quiet" onclick={()=>history.back()}>キャンセル</button><button class="button button--primary" disabled={busy}>保存する</button></div>
     </form>
   {:else if character}
-    <article class="card character-sheet"><div class="panel-heading"><div><p class="eyebrow">CHARACTER RECORD</p><h2>{character.name}</h2><p class="muted">LV. {character.level} · {character.originName} · {character.adventureName}</p></div><button class="button button--quiet" onclick={()=>go(`/characters/${character!.id}/edit`)}>編集</button></div><div class="resource-row"><span>ルーン <strong>{character.runes}</strong></span><span>素材点 <strong>{character.materialPoints}</strong></span></div><div class="stats">{#each abilityKeys as key}<div class="stat"><span>{abilityLabels[key]}</span><strong>{character.abilities[key].total}</strong><small>{character.abilities[key].initial} + {character.abilities[key].growth} + {character.abilities[key].bonus}</small></div>{/each}</div></article>
+    <CharacterSheet {character} onUpdated={(updated)=>character=updated}/>
   {:else if path==='/adventures'}
     <div class="toolbar"><div><p class="eyebrow">ADVENTURES</p><h2>冒険一覧</h2></div><button class="button button--primary" onclick={()=>go('/adventures/new')}>新しい冒険</button></div><div class="card-grid">{#each adventures as a}<button class="record-card" onclick={()=>go(`/adventures/${a.id}`)}><strong>{a.name}</strong><span>{a.characterCount} 人のキャラクター</span><small>{a.memo||'メモなし'}</small></button>{/each}</div>{#if !adventures.length&&!busy}<div class="empty-state card">冒険はまだありません。</div>{/if}
   {:else if adventure}
@@ -154,7 +163,7 @@
     <form class="card form" onsubmit={(e)=>{e.preventDefault();void saveAdmin();}}><div class="panel-heading"><div><p class="eyebrow">MASTER DATA</p><h2>{adminLabels[adminKind]}を追加</h2></div><button type="button" class="button button--quiet" onclick={()=>go('/admin/')}>管理メニュー</button></div>
       <div class="form-grid"><label class="field field--wide" class:field--full={adminKind==='skills'}><span>名前</span><input bind:value={adminForm.name} onblur={normalizeWeaponCategoryName} required></label>
       {#if adminKind==='special-items'}<p class="muted field--full">冒険ごとに所持数を管理するアイテム種別を登録します。</p>
-      {:else if adminKind==='talismans'}<label class="field field--full"><span>効果</span><textarea rows="8" bind:value={adminForm.effect} required></textarea></label>
+      {:else if adminKind==='talismans'}<label class="field"><span>重量</span><input type="number" bind:value={adminForm.weight} required></label><label class="field field--full"><span>効果</span><textarea rows="8" bind:value={adminForm.effect} required></textarea></label>
       {:else if adminKind==='episodes'}<label class="field"><span>種別</span><select bind:value={adminForm.episodeType}><option value="MAIN">メイン</option><option value="SIDE">外伝</option></select></label><label class="field"><span>EP番号</span><input type="number" min={adminForm.episodeType==='MAIN'?0:1} max={adminForm.episodeType==='MAIN'?11:10} bind:value={adminForm.episodeNumber}></label><label class="field"><span>悪意適正レベル</span><input type="number" min="0" bind:value={adminForm.maliceLevel}></label>
       {:else if adminKind==='origins'}<label class="field"><span>初期レベル</span><input type="number" min="0" bind:value={adminForm.initialLevel}></label>
       {:else if adminKind==='armors'}<label class="field"><span>部位</span><select bind:value={adminForm.slot}><option value="HEAD">頭</option><option value="BODY">胴体</option></select></label><label class="field"><span>重量</span><input type="number" min="0" bind:value={adminForm.weight}></label><label class="field"><span>物理カット</span><input type="number" bind:value={adminForm.physicalCut}></label><label class="field"><span>現象カット</span><input type="number" bind:value={adminForm.phenomenonCut}></label><label class="field"><span>強靭値</span><input type="number" bind:value={adminForm.poise}></label>

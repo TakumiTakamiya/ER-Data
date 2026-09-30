@@ -31,18 +31,64 @@ export interface CharacterDetail extends CharacterSummary {
   runes: number;
   materialPoints: number;
   abilities: Record<AbilityKey, { initial: number; growth: number; bonus: number; total: number }>;
+  resources: CharacterResources;
+  adventureResources: { goldenSeeds: number; sacredTears: number; memoryStones: number; talismanPouches: number };
+  equipment: CharacterEquipment;
+  inventoryOptions: CharacterInventoryOptions;
+  learnedSkillSets: CharacterSkillSet[];
+  learnedSkills: CharacterLearnedSkill[];
+}
+export interface CharacterResources {
+  maxHpModifier: number; maxFpModifier: number; maxBlessingModifier: number; flaskTotalModifier: number;
+  crimsonFlaskHealModifier: number; crimsonFlaskAllocation: number;
+  ceruleanFlaskHealModifier: number; ceruleanFlaskAllocation: number;
 }
 export interface CharacterInput {
   name: string; adventureId: number; originId: number; level: number; runes: number; materialPoints: number;
-  growth: AbilityValues; bonus: AbilityValues;
+  growth: AbilityValues; bonus: AbilityValues; resources: CharacterResources;
 }
 export interface NamedOption { id: number; name: string }
+export interface EquipmentSkill {
+  id: number; name: string; classification: string; timing: string; cost: string; effect: string;
+}
+export interface FullSkill extends OriginSkill {
+  weaponCategories: NamedOption[]; shieldCategories: NamedOption[];
+}
+export interface EquippedWeapon {
+  slotId: number; position: number; reinforcementLevel: number; id: number; name: string; weight: number; powerModifier: string; skills: EquipmentSkill[];
+}
+export interface EquippedWeaponCategory {
+  id: number; name: string; attackCost: number; oneHandDamage: string[]; twoHandDamage: string[]; guardCost: number;
+  physicalGuard: string; phenomenonGuard: string; skills: EquipmentSkill[]; weapons: EquippedWeapon[];
+}
+export interface EquippedShield {
+  slotId: number; position: number; reinforcementLevel: number; id: number; name: string; categoryName: string; weight: number;
+  guardCost: number; physicalGuard: string; phenomenonGuard: string; skills: EquipmentSkill[];
+}
+export interface EquippedArmor {
+  id: number; name: string; slot: 'HEAD'|'BODY'; weight: number; physicalCut: number; phenomenonCut: number; poise: number;
+  armorSet: (NamedOption & { seriesEffect: string; skills: EquipmentSkill[] }) | null; skills: EquipmentSkill[];
+}
+export interface EquippedTalisman { slotId: number; position: number; id: number; name: string; weight: number; effect: string }
+export interface CharacterEquipment {
+  weaponCategories: EquippedWeaponCategory[]; shields: EquippedShield[];
+  armors: { head: EquippedArmor|null; body: EquippedArmor|null }; talismans: EquippedTalisman[];
+}
+export interface EquipmentCandidate extends NamedOption {
+  quantity: number; weight: number; requirements?: Partial<Record<AbilityKey,number>>; slot?: 'HEAD'|'BODY';
+  categoryName?: string; effect?: string; kind?: 'weapon'|'shield'; powerModifier?: string; skills?: EquipmentSkill[];
+}
+export interface CharacterSkillSet extends NamedOption { notes: string; skills: FullSkill[] }
+export interface CharacterLearnedSkill extends FullSkill { rowId: number; position: number; rank: number; highestRank: number }
+export interface CharacterInventoryOptions {
+  weapons: EquipmentCandidate[]; shields: EquipmentCandidate[]; armors: EquipmentCandidate[]; talismans: EquipmentCandidate[]; skillSets: (NamedOption & { quantity:number; notes:string })[];
+}
 export interface ArmorSetSummary { id: number; name: string; seriesEffect: string; armorCount: number; skillCount: number }
 export interface ArmorDetail {
   id: number; name: string; slot: 'HEAD' | 'BODY'; weight: number; physicalCut: number; phenomenonCut: number; poise: number;
   armorSet: NamedOption | null; skills: NamedOption[];
 }
-export interface TalismanDetail { id: number; name: string; effect: string }
+export interface TalismanDetail { id: number; name: string; weight: number; effect: string }
 export interface AdminOptions {
   skills: NamedOption[]; armorSets: NamedOption[]; weaponCategories: NamedOption[]; shieldCategories: NamedOption[];
   skillSets: NamedOption[]; armors: (NamedOption & { slot: 'HEAD' | 'BODY' })[]; weapons: NamedOption[]; shields: NamedOption[];
