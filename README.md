@@ -1,145 +1,103 @@
 # 褪せ人の記録庫
 
-Google スプレッドシートをデータストアとして使う、ELDEN RING TRPGキャラクター保管・閲覧アプリの概念実証です。Svelte 5 + TypeScript + Viteで構成され、GitHub Pagesだけで動作します。
+ELDEN RING TRPGのキャラクターとマスターデータを共有管理する、Svelte 5 + Cloudflare Workers + D1アプリです。
 
-## できること
+## 機能
 
-- Googleアカウントで選択した1ファイルだけの利用を認可
-- Google Pickerで、この記録庫用のスプレッドシートを明示的に選択
-- 共有スプレッドシートからキャラクターと素性を一括取得
-- `classId`を使った外部キー参照
-- キャラクターの作成・更新
-- シートに保存しない派生値「ガード」の計算
-- 401、403、シート構成不正、参照先欠落の表示
+- キャラクターの一覧、作成、詳細、編集
+- 冒険の一覧、作成、編集
+- 素性、防具、防具セット、武器、武器カテゴリ、盾、盾カテゴリ、スキル、スキルセット、遺灰の登録
+- 関連マスターが存在しない場合の同時登録
+- 素性初期値・成長値・追加値からの現在能力値計算
 
-OAuthスコープには、ファイル単位でアクセスを許可する非機密スコープ `https://www.googleapis.com/auth/drive.file` を使用します。アクセストークンはブラウザのメモリにだけ保持します。ページを閉じたり再読み込みしたりすると、Googleへの再接続とファイル選択が必要です。
+認証と管理者判定はアプリ内に実装せず、Cloudflare Accessのパス別ポリシーで行います。
 
-## 1. スプレッドシートを作る
+## 構成
 
-1. Google スプレッドシートを新規作成します。
-2. `Characters`と`Classes`という名前の2シートを作ります。名前は大文字・小文字を含め完全一致が必要です。
-3. [sample-data/Characters.csv](sample-data/Characters.csv) と [sample-data/Classes.csv](sample-data/Classes.csv) の内容を、それぞれA1セルから貼り付けます。
-4. アプリを使うGoogleアカウントを、スプレッドシートの「編集者」として共有します。
-5. URLの `/spreadsheets/d/` と `/edit` の間にあるSpreadsheet IDを控えます。
+```text
+ブラウザ（Svelte SPA）
+        │ /api/*
+Cloudflare Worker
+        │ DB binding
+Cloudflare D1: er-data-db
+```
 
-列名はアプリとAPIの契約です。並び順は変更できますが、名前の変更や削除はできません。行の追加は可能です。`id`はシート内で一意にしてください。
+- `src/`：Svelteフロントエンドと共有API型
+- `worker/index.ts`：Worker API
+- `migrations/`：D1スキーマと初期データ
+- `wrangler.jsonc`：Static Assets、Worker、D1の設定
+- `DATABASE.md`：テーブル構造と運用上の役割
+- `DIALY.md`：次の作業者向けの現状と注意事項
+- `docs/SCREEN_GUIDE.md`：画面・ルーティング・UI仕様
+- `docs/DEVELOPMENT_GUIDE.md`：API、ローカル開発、検証、デプロイ
 
-## 2. Google Cloudを設定する
-
-1. [Google Cloud Console](https://console.cloud.google.com/)でプロジェクトを作成します。
-2. 「APIとサービス」→「ライブラリ」から **Google Sheets API** と **Google Picker API** を有効にします。
-3. プロジェクトの「ダッシュボード」または「プロジェクト情報」に表示される数字だけの **プロジェクト番号**を控えます。これがGoogle PickerのApp IDです。
-4. OAuth同意画面を構成します。概念実証では公開ステータスを「テスト」にし、卓メンバーをテストユーザーとして追加します。
-5. OAuthクライアントIDを「ウェブ アプリケーション」として作成します。
-6. 「承認済みの JavaScript 生成元」に開発用の `http://localhost:5173` と、公開先の `https://<user>.github.io` を追加します。生成元にはパスを含めません。
-7. 発行されたクライアントIDを控えます。クライアントシークレットはこのアプリでは使用しません。
-8. 「認証情報」→「認証情報を作成」→「APIキー」で、Google Picker用のAPIキーを作成します。
-9. APIキーの「アプリケーションの制限」を **ウェブサイト** にし、`http://localhost:5173/*` と `https://<user>.github.io/*` を許可します。
-10. APIキーの「APIの制限」を **キーを制限** にし、**Google Picker API**だけを選択します。
-
-このアプリは `drive.file` スコープでGoogle Pickerに表示されたファイルをユーザー自身に選ばせます。選択されたIDが設定済みのSpreadsheet IDと一致した場合だけ、Sheets APIを呼び出します。別のファイルを選択すると接続を拒否します。
-
-### 以前の全スプレッドシート権限を解除する
-
-旧バージョンを一度でも認可したアカウントは、広い `spreadsheets` スコープの許可がGoogleアカウント側に残っている可能性があります。[Googleアカウントのサードパーティ接続](https://myaccount.google.com/connections)を開き、このアプリへの既存アクセスを一度削除してから、新しいバージョンで再接続してください。
-
-## 3. ローカルで動かす
+## ローカル開発
 
 Node.js 22以降を推奨します。
 
-```sh
+```powershell
 npm install
-Copy-Item .env.example .env.local
-```
-
-`.env.local`を編集します。
-
-```dotenv
-VITE_GOOGLE_CLIENT_ID=発行されたクライアントID
-VITE_GOOGLE_SPREADSHEET_ID=共有スプレッドシートID
-VITE_GOOGLE_API_KEY=Google Picker用APIキー
-VITE_GOOGLE_APP_ID=数字だけのGoogle Cloudプロジェクト番号
-```
-
-```sh
-npm run dev
-```
-
-ブラウザで `http://localhost:5173` を開き、「Googleに接続」を押します。認可後にGoogle Pickerが開くので、手順1で作成した共有スプレッドシートを選択します。
-
-## 4. GitHub Pagesへ公開する
-
-1. GitHubリポジトリの **Settings → Pages → Build and deployment** で Source を **GitHub Actions** にします。
-2. **Settings → Secrets and variables → Actions → Variables** に次のRepository variablesを作ります。
-   - `GOOGLE_CLIENT_ID`
-   - `GOOGLE_SPREADSHEET_ID`
-   - `GOOGLE_API_KEY`
-   - `GOOGLE_APP_ID`
-3. デフォルトブランチを`main`にし、pushします。
-4. `Deploy to GitHub Pages`ワークフローがテスト、型チェック、ビルド、デプロイを行います。
-
-4つの値はすべてブラウザへ配布されます。APIキーは必ずHTTPリファラーとGoogle Picker APIで制限してください。アクセストークンやクライアントシークレットはGitHubへ登録しないでください。
-
-## Cloudflare Workersで静的サイトを確認する
-
-将来のD1移行に備え、同じSvelteアプリをCloudflare Workers Static Assetsでも配信できます。現時点では静的ホスティングだけを使用し、D1・認証API・データ移行はまだ構成しません。
-
-現在の確認用URL: <https://er-data.takumitakamiya.workers.dev>
-
-```sh
-npx wrangler login
-npm run cf:deploy
-```
-
-ローカルでCloudflare配信構成を確認する場合は次を使います。
-
-```sh
+npx wrangler d1 migrations apply er-data-db --local
 npm run cf:dev
 ```
 
-Google Sheets版として動かす間は、通常のViteビルドと同じ4つの`VITE_GOOGLE_*`環境変数が必要です。Cloudflare版の動作確認後も、移行が完了するまではGitHub Pagesを停止しません。
+`npm run dev`はフロントエンドだけを起動するため、D1 APIを利用する通常の動作確認には`npm run cf:dev`を使用してください。
 
-## 開発コマンド
+## 検証
 
-```sh
-npm run dev       # 開発サーバー
-npm test          # 単体テスト
-npm run check     # Svelte/TypeScriptチェック
-npm run build     # 本番ビルド
-npm run preview   # 本番ビルドのローカル確認
+```powershell
+npm test
+npm run check
+npm run build
+npx wrangler deploy --dry-run
 ```
 
-## データ仕様
+## Cloudflare Access
 
-### Characters
+本番デプロイ前に、WorkerのホストへCloudflare Accessを設定します。
 
-| 列 | 内容 |
-|---|---|
-| `id` | UUID。シート内で一意 |
-| `name` | キャラクター名 |
-| `level` | 1以上の整数 |
-| `classId` | `Classes.id`への参照 |
-| `vigor` | 生命力。1以上の整数 |
-| `mind` | 精神力。1以上の整数 |
-| `endurance` | 持久力。1以上の整数 |
-| `notes` | 備考 |
-| `updatedAt` | アプリが保存するISO日時 |
+1. メールOTPを有効化する。
+2. Workerホスト全体を卓メンバーのAllowポリシーで保護する。
+3. `/admin`、`/admin/*`、`/api/admin/*`を管理者だけのAllowポリシーで保護する。
+4. 未認証者、一般利用者、管理者それぞれでアクセスを確認する。
+5. 確認後に`npm run cf:deploy`を実行する。
 
-### Classes
+メールアドレスはCloudflare Dashboardで登録し、リポジトリやD1には保存しません。Accessが未設定の状態では、書き込みAPIを含むバージョンを本番へデプロイしないでください。
 
-| 列 | 内容 |
-|---|---|
-| `id` | 素性ID。シート内で一意 |
-| `name` | 表示名 |
-| `guardBonus` | 0以上の整数 |
-| `description` | 説明 |
+## API
 
-ガードは `floor(endurance / 4) + guardBonus` でフロントエンド内だけで計算されます。
+一般API：
 
-## 概念実証としての制約
+- `GET/POST /api/adventures`
+- `GET/PUT /api/adventures/:id`
+- `PUT /api/adventures/:id/episodes/:episodeId`
+- `PUT /api/adventures/:id/contents`
+- `GET /api/origins`
+- `GET/POST /api/characters`
+- `GET/PUT /api/characters/:id`
 
-- 同時更新の競合検出はなく、最後に保存した内容が優先されます。
-- 削除、履歴、オフライン対応はありません。
-- スプレッドシートを直接編集するときも列名・ID・数値制約を守る必要があります。
-- `drive.file`はユーザーがGoogle Pickerで選択したファイルをアプリから操作可能にします。セルやシート単位へさらに細かくOAuth権限を限定することはできません。
-- Pickerで別ファイルを選んだ場合、その選択はGoogle側ではユーザーによる許可になりますが、本アプリは固定のSpreadsheet IDと一致しないファイルを読み書きしません。
+管理API：
+
+- `GET /api/admin/options`
+- `POST /api/admin/episodes`
+- `POST /api/admin/special-items`
+- `GET /api/admin/armor-sets`
+- `DELETE /api/admin/armor-sets/:id`
+- `GET /api/admin/armors`
+- `PUT/DELETE /api/admin/armors/:id`
+- `GET /api/admin/skills`
+- `PUT/DELETE /api/admin/skills/:id`
+- `GET/POST /api/admin/talismans`
+- `PUT/DELETE /api/admin/talismans/:id`
+- `POST /api/admin/origins`
+- `POST /api/admin/armors`
+- `POST /api/admin/armor-sets`
+- `POST /api/admin/weapons`
+- `POST /api/admin/weapon-categories`
+- `POST /api/admin/shields`
+- `POST /api/admin/shield-categories`
+- `POST /api/admin/skills`
+- `POST /api/admin/skill-sets`
+- `POST /api/admin/spirit-ashes`
+
+エラーは`{ "error": { "code": "...", "message": "..." } }`形式です。
