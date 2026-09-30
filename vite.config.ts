@@ -2,8 +2,8 @@ import { defineConfig } from 'vitest/config';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 
 export default defineConfig({
-  // Relative assets work for both user/organization Pages and repository Pages.
-  base: './',
+  // The Worker serves every SPA route from the same origin.
+  base: '/',
   plugins: [svelte()],
   test: {
     environment: 'jsdom',

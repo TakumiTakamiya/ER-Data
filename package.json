@@ -11,7 +11,8 @@
     "cf:deploy": "npm run build && wrangler deploy",
     "check": "svelte-check --tsconfig ./tsconfig.json",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "cf:types": "wrangler types"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^6.0.0",
