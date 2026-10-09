@@ -469,13 +469,18 @@ async function adminCreate(db:D1Database,request:Request,kind:string){
     statements.push(db.prepare('INSERT INTO armor_sets(name,series_effect) VALUES(?,?)').bind(name,text(input,'seriesEffect',true)));
     skillIds.forEach(id=>statements.push(db.prepare('INSERT INTO armor_set_skills(armor_set_id,skill_id) VALUES((SELECT id FROM armor_sets WHERE name=?),?)').bind(name,id)));
   } else if(kind==='armors'){
-    const name=text(input,'name');const slot=text(input,'slot');if(!['HEAD','BODY'].includes(slot))throw new HttpError(400,'VALIDATION_ERROR','防具部位が不正です。');
-    const newSet=input.newArmorSet?asObject(input.newArmorSet):null;const setId=input.armorSetId?integer(input,'armorSetId',1):null;const skillIds=ids(input,'skillIds');
+    const armorInputs=asObject(input.armors);const setId=input.armorSetId===null||input.armorSetId===''||input.armorSetId===undefined?null:integer(input,'armorSetId',1);const skillIds=ids(input,'skillIds');
     await assertReferences(db,[...(setId?[['armor_sets',setId] as [string,number]]:[]),...skillIds.map(id=>['skills',id] as [string,number])]);
-    if(newSet)statements.push(db.prepare('INSERT INTO armor_sets(name,series_effect) VALUES(?,?)').bind(text(newSet,'name'),text(newSet,'seriesEffect',true)));
-    const setExpr=newSet?'(SELECT id FROM armor_sets WHERE name=?)':'?';const values=newSet?[text(newSet,'name')]:[setId];
-    statements.push(db.prepare(`INSERT INTO armors(armor_set_id,name,armor_slot,weight,physical_cut,phenomenon_cut,poise) VALUES(${setExpr},?,?,?,?,?,?)`).bind(...values,name,slot,integer(input,'weight'),signedInteger(input,'physicalCut'),signedInteger(input,'phenomenonCut'),signedInteger(input,'poise')));
-    skillIds.forEach(id=>statements.push(db.prepare('INSERT INTO armor_skills(armor_id,skill_id) VALUES((SELECT id FROM armors WHERE name=?),?)').bind(name,id)));
+    const armors=([['HEAD',armorInputs.head],['BODY',armorInputs.body]] as const).flatMap(([slot,value])=>{
+      if(value===null||value===undefined)return[];
+      const armor=asObject(value);const name=text(armor,'name',true);
+      return name?[{slot,name,weight:integer(armor,'weight'),physicalCut:signedInteger(armor,'physicalCut'),phenomenonCut:signedInteger(armor,'phenomenonCut'),poise:signedInteger(armor,'poise')}]:[];
+    });
+    if(!armors.length)throw new HttpError(400,'VALIDATION_ERROR','頭または胴の防具名を入力してください。');
+    for(const armor of armors){
+      statements.push(db.prepare('INSERT INTO armors(armor_set_id,name,armor_slot,weight,physical_cut,phenomenon_cut,poise) VALUES(?,?,?,?,?,?,?)').bind(setId,armor.name,armor.slot,armor.weight,armor.physicalCut,armor.phenomenonCut,armor.poise));
+      skillIds.forEach(id=>statements.push(db.prepare('INSERT INTO armor_skills(armor_id,skill_id) VALUES((SELECT id FROM armors WHERE name=?),?)').bind(armor.name,id)));
+    }
   } else if(kind==='weapons'){
     const name=text(input,'name');const categoryId=integer(input,'categoryId',1);const skillIds=ids(input,'skillIds');
     await assertReferences(db,[['weapon_categories',categoryId],...skillIds.map(id=>['skills',id] as [string,number])]);
