@@ -8,12 +8,12 @@
   import TalismanCatalog from './lib/TalismanCatalog.svelte';
   import AdventureWorkspace from './lib/AdventureWorkspace.svelte';
   import CharacterSheet from './lib/CharacterSheet.svelte';
-  import { applyCostShortcut, type CostShortcut } from './lib/skillForm';
+  import { applyCostShortcut, duplicateSkillForm, type CostShortcut } from './lib/skillForm';
   import { weaponCategorySizes, withWeaponCategorySize } from './lib/weaponCategoryForm';
   import { combinedCategoryOptions, combinedCategorySelection, splitCategorySelection } from './lib/skillCategorySelection';
   import { deleteJson, getJson, sendJson } from './lib/api';
   import { adminKindForPath, type AdminKind } from './lib/router';
-  import { abilityKeys, type AbilityKey, type AbilityValues, type Adventure, type AdventureDetail, type AdminOptions, type ArmorSetSummary, type CharacterDetail, type CharacterInput, type CharacterSummary, type EpisodeStatus, type Origin, type OriginSkill } from './lib/types';
+  import { abilityKeys, type AbilityKey, type AbilityValues, type Adventure, type AdventureDetail, type AdminOptions, type ArmorSetSummary, type CharacterDetail, type CharacterInput, type CharacterSummary, type EpisodeStatus, type Origin, type OriginSkill, type SkillDetail } from './lib/types';
 
   const abilityLabels: Record<AbilityKey,string>={vigor:'生命力',mind:'精神力',endurance:'持久力',strength:'筋力',dexterity:'技量',intelligence:'知力',faith:'信仰',arcane:'神秘'};
   const dieFaces=['⚀️','⚁️','⚂️','⚃️','⚄️','⚅️'];
@@ -48,6 +48,7 @@
 
   function prepareRoute(to:string){const kind=adminKindForPath(to);if(kind){adminForm=initialAdmin(kind);showRelated=false;}}
   function go(to:string){prepareRoute(to);history.pushState({},'',to);path=to;errorMessage='';successMessage='';void load();}
+  function duplicateSkill(skill:SkillDetail){adminForm=duplicateSkillForm(skill);showRelated=false;history.pushState({},'','/admin/skills/new');path='/admin/skills/new';errorMessage='';successMessage='';void load();}
   function message(error:unknown){errorMessage=error instanceof Error?error.message:'予期しないエラーが発生しました。';}
   function selectedIds(event:Event){return Array.from((event.currentTarget as HTMLSelectElement).selectedOptions).map(o=>Number(o.value));}
   function setSkillField(field:'classification'|'target',value:string){adminForm[field]=value;adminForm={...adminForm};}
@@ -154,7 +155,7 @@
     <div class="toolbar"><div><p class="eyebrow">MASTER DATA</p><h2>防具セット一覧</h2><p class="muted">{armorSets.length} 件の防具セット</p></div><div class="toolbar-actions"><button class="button button--quiet" onclick={()=>go('/admin/')}>管理メニュー</button><button class="button button--primary" onclick={()=>go('/admin/armor-sets/new')}>新規追加</button></div></div>
     {#if armorSets.length}<div class="armor-set-list">{#each armorSets as armorSet}<article class="card armor-set-item"><div><p class="eyebrow">ARMOR SET #{armorSet.id}</p><h3>{armorSet.name}</h3><p class="armor-set-item__effect">{armorSet.seriesEffect||'シリーズ効果なし'}</p><p class="armor-set-item__meta">所属防具 {armorSet.armorCount} 件 · 装備スキル {armorSet.skillCount} 件</p></div><button class="button button--danger" onclick={()=>void removeArmorSet(armorSet)} disabled={busy}>削除</button></article>{/each}</div>{:else if !busy}<section class="empty-state card"><h3>防具セットはまだありません</h3><p>「新規追加」から最初の防具セットを登録できます。</p></section>{/if}
   {:else if path==='/admin/skills'}
-    <SkillCatalog {options} onNavigate={go} onChanged={()=>void load()} />
+    <SkillCatalog {options} onNavigate={go} onDuplicate={duplicateSkill} onChanged={()=>void load()} />
   {:else if path==='/admin/armors'}
     <ArmorCatalog {options} onNavigate={go} onChanged={()=>void load()} />
   {:else if path==='/admin/talismans'}

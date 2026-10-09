@@ -1,3 +1,5 @@
+import type { SkillDetail } from './types';
+
 const fullWidthDigits = ['０', '１', '２', '３', '４', '５', '６', '７', '８', '９'];
 
 function toFullWidth(value: number): string {
@@ -14,6 +16,32 @@ function appendCost(current: string, token: string): string {
 }
 
 export type CostShortcut = 'dice' | 'sequence' | 'pair' | 'fp';
+
+export interface SkillCreationForm extends Record<string, unknown> {
+  name: string;
+  classification: string;
+  timing: string;
+  target: string;
+  cost: string;
+  maxUses: number | null;
+  rankEffects: string[];
+  categoryIds: number[];
+  shieldCategoryIds: number[];
+}
+
+export function duplicateSkillForm(skill: SkillDetail): SkillCreationForm {
+  return {
+    name: `${skill.name}（コピー）`,
+    classification: skill.classification,
+    timing: skill.timing,
+    target: skill.target,
+    cost: skill.cost,
+    maxUses: skill.maxUses,
+    rankEffects: [...skill.rankEffects],
+    categoryIds: skill.weaponCategories.map((category) => category.id),
+    shieldCategoryIds: skill.shieldCategories.map((category) => category.id),
+  };
+}
 
 export function applyCostShortcut(current: string, shortcut: CostShortcut): string {
   if (shortcut === 'fp') {
