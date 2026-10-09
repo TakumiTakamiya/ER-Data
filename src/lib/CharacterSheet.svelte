@@ -7,6 +7,7 @@
   import SkillHoverDetail from './SkillHoverDetail.svelte';
   import InlineNumberEdit from './InlineNumberEdit.svelte';
   import { weaponDamage } from './weaponDamage';
+  import { buildCocofoliaCharacterData } from './cocofolia';
   import { toPng } from 'html-to-image';
 
   export let character:CharacterDetail;
@@ -14,7 +15,7 @@
 
   const labels:Record<AbilityKey,string>={vigor:'生命力',mind:'精神力',endurance:'持久力',strength:'筋力',dexterity:'技量',intelligence:'知力',faith:'信仰',arcane:'神秘'};
   const toInput=(value:CharacterDetail):CharacterInput=>({name:value.name,adventureId:value.adventureId,originId:value.originId,level:value.level,runes:value.runes,materialPoints:value.materialPoints,growth:Object.fromEntries(abilityKeys.map(key=>[key,value.abilities[key].growth])) as AbilityValues,bonus:Object.fromEntries(abilityKeys.map(key=>[key,value.abilities[key].bonus])) as AbilityValues,resources:{...value.resources}});
-  let form=toInput(character),busy=false,exporting=false,errorMessage='',successMessage='',sheetElement:HTMLFormElement;
+  let form=toInput(character),busy=false,copying=false,exporting=false,errorMessage='',successMessage='',sheetElement:HTMLFormElement;
   let picker:''|'equipment'|'head'|'body'|'talismans'|'skillSets'|'skills'='',equipmentQuery='',skillQuery='';
   let editingAbility:{key:AbilityKey;field:'growth'|'bonus'}|null=null;
 
@@ -45,6 +46,15 @@
   function focusNumber(node:HTMLInputElement){queueMicrotask(()=>{node.focus();node.select();});}
   function editAbility(key:AbilityKey,field:'growth'|'bonus'){editingAbility={key,field};}
   function finishAbilityEdit(){editingAbility=null;form={...form,growth:{...form.growth},bonus:{...form.bonus}};}
+  async function copyForCocofolia(){
+    copying=true;errorMessage='';successMessage='';
+    try{
+      const clipboardData=buildCocofoliaCharacterData({name:character.name,abilities:currentAbilities,resources:form.resources,skills:character.learnedSkills});
+      await navigator.clipboard.writeText(JSON.stringify(clipboardData));
+      successMessage='ココフォリア用のキャラクターデータをコピーしました。';
+    }catch(error){errorMessage=error instanceof Error?`クリップボードにコピーできませんでした。${error.message}`:'クリップボードにコピーできませんでした。';}
+    finally{copying=false;}
+  }
   async function exportImage(){
     exporting=true;errorMessage='';successMessage='';
     try{
@@ -62,7 +72,7 @@
 {#if errorMessage}<div class="notice notice--error" role="alert">{errorMessage}</div>{/if}
 {#if successMessage}<div class="notice notice--success" role="status">{successMessage}</div>{/if}
 <form bind:this={sheetElement} class="card character-sheet" onsubmit={(event)=>{event.preventDefault();void save();}}>
-  <div class="panel-heading"><div><p class="eyebrow">CHARACTER RECORD</p><h2>{character.name}</h2><p class="muted">LV. {character.level} · {character.originName} · {character.adventureName}</p></div><div class="character-sheet-actions"><button type="button" class="button button--quiet" data-export-ignore="true" disabled={busy||exporting} onclick={()=>void exportImage()}>{exporting?'画像を作成中…':'画像として保存'}</button><button class="button button--primary" disabled={busy||exporting}>変更を保存</button></div></div>
+  <div class="panel-heading"><div><p class="eyebrow">CHARACTER RECORD</p><h2>{character.name}</h2><p class="muted">LV. {character.level} · {character.originName} · {character.adventureName}</p></div><div class="character-sheet-actions"><button type="button" class="button button--quiet" data-export-ignore="true" disabled={busy||copying||exporting} onclick={()=>void copyForCocofolia()}>{copying?'コピー中…':'ココフォリア用にコピー'}</button><button type="button" class="button button--quiet" data-export-ignore="true" disabled={busy||copying||exporting} onclick={()=>void exportImage()}>{exporting?'画像を作成中…':'画像として保存'}</button><button class="button button--primary" disabled={busy||copying||exporting}>変更を保存</button></div></div>
   <div class="resource-row"><label>ルーン<InlineNumberEdit ariaLabel="ルーン" min={0} bind:value={form.runes}/></label><label>素材点<InlineNumberEdit ariaLabel="素材点" min={0} bind:value={form.materialPoints}/></label></div>
   <div class="character-detail-columns">
     <div class="character-detail-left">
