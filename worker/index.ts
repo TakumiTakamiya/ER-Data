@@ -130,7 +130,7 @@ async function getCharacterDetail(db:D1Database,id:number){
     if(!categoryMap.has(categoryId))categoryMap.set(categoryId,{id:categoryId,name:stringValue(weapon.category_name),attackCost:numberValue(weapon.attack_cost),oneHandDamage:[1,2,3,4,5].map(hit=>stringValue(weapon[`one_hand_damage_${hit}`])),twoHandDamage:[1,2,3,4,5].map(hit=>stringValue(weapon[`two_hand_damage_${hit}`])),guardCost:numberValue(weapon.guard_cost),physicalGuard:stringValue(weapon.two_hand_physical_guard),phenomenonGuard:stringValue(weapon.two_hand_phenomenon_guard),skills:skillsFor(categorySkillRows.results,'weapon_category_id',categoryId),weapons:[]});
     (categoryMap.get(categoryId)!.weapons as Record<string,unknown>[]).push({slotId:numberValue(weapon.slot_id),position:numberValue(weapon.position),reinforcementLevel:numberValue(weapon.reinforcement_level),id:numberValue(weapon.id),name:stringValue(weapon.name),weight:numberValue(weapon.weight),powerModifier:stringValue(weapon.power_modifier),skills:skillsFor(weaponSkillRows.results,'weapon_id',numberValue(weapon.id))});
   }
-  const armorFor=(slot:string)=>{const armor=armorRows.results.find(item=>item.armor_slot===slot);if(!armor)return null;const setId=armor.armor_set_id===null?null:numberValue(armor.armor_set_id);return{id:numberValue(armor.id),name:stringValue(armor.name),slot:stringValue(armor.armor_slot),weight:numberValue(armor.weight),physicalCut:numberValue(armor.physical_cut),phenomenonCut:numberValue(armor.phenomenon_cut),poise:numberValue(armor.poise),armorSet:setId===null?null:{id:setId,name:stringValue(armor.armor_set_name),seriesEffect:stringValue(armor.series_effect),skills:skillsFor(setSkillRows.results,'armor_set_id',setId)},skills:skillsFor(armorSkillRows.results,'armor_id',numberValue(armor.id))};};
+  const armorFor=(slot:string)=>{const armor=armorRows.results.find(item=>item.armor_slot===slot);if(!armor)return null;const setId=armor.armor_set_id===null?null:numberValue(armor.armor_set_id);return{id:numberValue(armor.id),name:stringValue(armor.name),slot:stringValue(armor.armor_slot),weight:numberValue(armor.weight),physicalCut:numberValue(armor.physical_cut),phenomenonCut:numberValue(armor.phenomenon_cut),poise:numberValue(armor.poise),simpleSkill:stringValue(armor.simple_skill),armorSet:setId===null?null:{id:setId,name:stringValue(armor.armor_set_name),seriesEffect:stringValue(armor.series_effect),skills:skillsFor(setSkillRows.results,'armor_set_id',setId)},skills:skillsFor(armorSkillRows.results,'armor_id',numberValue(armor.id))};};
   const fullSkill=(skillId:number)=>skillMap.get(skillId)!;
   const learnedSkillSets=learnedSetRows.results.map(set=>({id:numberValue(set.skill_set_id),name:stringValue(set.name),notes:stringValue(set.notes),skills:setMemberRows.results.filter(member=>numberValue(member.skill_set_id)===numberValue(set.skill_set_id)).map(member=>fullSkill(numberValue(member.skill_id)))}));
   const learnedSkills=learnedSkillRows.results.map(item=>{const skill=fullSkill(numberValue(item.skill_id));const highestRank=Math.max(1,...(skill.rankEffects as string[]).map((effect,index)=>stringValue(effect).trim()?index+1:0));return{...skill,rowId:numberValue(item.row_id),position:numberValue(item.position),rank:numberValue(item.rank),highestRank};});
@@ -362,7 +362,7 @@ async function armorList(db:D1Database){
     db.prepare(`SELECT a.*,s.name armor_set_name FROM armors a LEFT JOIN armor_sets s ON s.id=a.armor_set_id ORDER BY a.id`).all(),
     db.prepare(`SELECT link.armor_id,s.id,s.name FROM armor_skills link JOIN skills s ON s.id=link.skill_id ORDER BY s.name`).all()
   ]);
-  return json(armors.results.map(armor=>({id:Number(armor.id),name:String(armor.name),slot:String(armor.armor_slot),weight:Number(armor.weight),physicalCut:Number(armor.physical_cut),phenomenonCut:Number(armor.phenomenon_cut),poise:Number(armor.poise),armorSet:armor.armor_set_id===null?null:{id:Number(armor.armor_set_id),name:String(armor.armor_set_name)},skills:skills.results.filter(row=>row.armor_id===armor.id).map(row=>({id:Number(row.id),name:String(row.name)}))})));
+  return json(armors.results.map(armor=>({id:Number(armor.id),name:String(armor.name),slot:String(armor.armor_slot),weight:Number(armor.weight),physicalCut:Number(armor.physical_cut),phenomenonCut:Number(armor.phenomenon_cut),poise:Number(armor.poise),simpleSkill:String(armor.simple_skill??''),armorSet:armor.armor_set_id===null?null:{id:Number(armor.armor_set_id),name:String(armor.armor_set_name)},skills:skills.results.filter(row=>row.armor_id===armor.id).map(row=>({id:Number(row.id),name:String(row.name)}))})));
 }
 
 async function armorById(db:D1Database,request:Request,path:string){
@@ -377,7 +377,7 @@ async function armorById(db:D1Database,request:Request,path:string){
   const input=await body(request);const name=text(input,'name');const slot=text(input,'slot');if(!['HEAD','BODY'].includes(slot))throw new HttpError(400,'VALIDATION_ERROR','防具部位が不正です。');
   const armorSetId=input.armorSetId===null||input.armorSetId===''||input.armorSetId===undefined?null:integer(input,'armorSetId',1);const skillIds=ids(input,'skillIds');
   await assertReferences(db,[...(armorSetId?[['armor_sets',armorSetId] as [string,number]]:[]),...skillIds.map(skillId=>['skills',skillId] as [string,number])]);
-  const statements=[db.prepare('UPDATE armors SET armor_set_id=?,name=?,armor_slot=?,weight=?,physical_cut=?,phenomenon_cut=?,poise=? WHERE id=?').bind(armorSetId,name,slot,integer(input,'weight'),signedInteger(input,'physicalCut'),signedInteger(input,'phenomenonCut'),signedInteger(input,'poise'),id),db.prepare('DELETE FROM armor_skills WHERE armor_id=?').bind(id)];
+  const statements=[db.prepare('UPDATE armors SET armor_set_id=?,name=?,armor_slot=?,weight=?,physical_cut=?,phenomenon_cut=?,poise=?,simple_skill=? WHERE id=?').bind(armorSetId,name,slot,integer(input,'weight'),signedInteger(input,'physicalCut'),signedInteger(input,'phenomenonCut'),signedInteger(input,'poise'),text(input,'simpleSkill',true),id),db.prepare('DELETE FROM armor_skills WHERE armor_id=?').bind(id)];
   skillIds.forEach(skillId=>statements.push(db.prepare('INSERT INTO armor_skills(armor_id,skill_id) VALUES(?,?)').bind(id,skillId)));
   await db.batch(statements);return json({ok:true});
 }
@@ -474,11 +474,11 @@ async function adminCreate(db:D1Database,request:Request,kind:string){
     const armors=([['HEAD',armorInputs.head],['BODY',armorInputs.body]] as const).flatMap(([slot,value])=>{
       if(value===null||value===undefined)return[];
       const armor=asObject(value);const name=text(armor,'name',true);
-      return name?[{slot,name,weight:integer(armor,'weight'),physicalCut:signedInteger(armor,'physicalCut'),phenomenonCut:signedInteger(armor,'phenomenonCut'),poise:signedInteger(armor,'poise')}]:[];
+      return name?[{slot,name,weight:integer(armor,'weight'),physicalCut:signedInteger(armor,'physicalCut'),phenomenonCut:signedInteger(armor,'phenomenonCut'),poise:signedInteger(armor,'poise'),simpleSkill:text(armor,'simpleSkill',true)}]:[];
     });
     if(!armors.length)throw new HttpError(400,'VALIDATION_ERROR','頭または胴の防具名を入力してください。');
     for(const armor of armors){
-      statements.push(db.prepare('INSERT INTO armors(armor_set_id,name,armor_slot,weight,physical_cut,phenomenon_cut,poise) VALUES(?,?,?,?,?,?,?)').bind(setId,armor.name,armor.slot,armor.weight,armor.physicalCut,armor.phenomenonCut,armor.poise));
+      statements.push(db.prepare('INSERT INTO armors(armor_set_id,name,armor_slot,weight,physical_cut,phenomenon_cut,poise,simple_skill) VALUES(?,?,?,?,?,?,?,?)').bind(setId,armor.name,armor.slot,armor.weight,armor.physicalCut,armor.phenomenonCut,armor.poise,armor.simpleSkill));
       skillIds.forEach(id=>statements.push(db.prepare('INSERT INTO armor_skills(armor_id,skill_id) VALUES((SELECT id FROM armors WHERE name=?),?)').bind(armor.name,id)));
     }
   } else if(kind==='weapons'){

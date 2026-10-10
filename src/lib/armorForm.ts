@@ -4,6 +4,7 @@ export interface ArmorDraft {
   physicalCut: number;
   phenomenonCut: number;
   poise: number;
+  simpleSkill: string;
 }
 
 export interface ArmorCreateForm {
@@ -19,6 +20,7 @@ export const emptyArmorDraft = (): ArmorDraft => ({
   physicalCut: 0,
   phenomenonCut: 0,
   poise: 0,
+  simpleSkill: '',
 });
 
 export const emptyArmorCreateForm = (): ArmorCreateForm => ({

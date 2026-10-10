@@ -335,6 +335,9 @@ button { color: inherit; }
 .armor-table td:last-child .text-button + .text-button { margin-left: .5rem; }
 .armor-effects { margin-top: .75rem; }
 .armor-effect-source > small { display: block; margin: .75rem .7rem -.35rem; color: var(--color-muted); }
+.armor-simple-skill { margin-top: .55rem; padding: .6rem; border: 1px solid var(--color-border); }
+.armor-simple-skill > small { margin: 0 0 .25rem; color: var(--color-accent); }
+.armor-simple-skill p { margin: 0; font-size: .72rem; white-space: pre-wrap; }
 .weight-summary > div { display: flex; align-items: baseline; gap: .8rem; }
 .weight-summary > div strong { color: var(--color-accent-bright); font-family: var(--font-mono); font-size: 2rem; }
 .weight-summary > div span { color: var(--color-muted); font-size: .85rem; }

@@ -1,0 +1,1 @@
+ALTER TABLE armors ADD COLUMN simple_skill TEXT NOT NULL DEFAULT '';

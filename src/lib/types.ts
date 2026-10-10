@@ -67,7 +67,7 @@ export interface EquippedShield {
 }
 export interface EquippedArmor {
   id: number; name: string; slot: 'HEAD'|'BODY'; weight: number; physicalCut: number; phenomenonCut: number; poise: number;
-  armorSet: (NamedOption & { seriesEffect: string; skills: EquipmentSkill[] }) | null; skills: EquipmentSkill[];
+  simpleSkill: string; armorSet: (NamedOption & { seriesEffect: string; skills: EquipmentSkill[] }) | null; skills: EquipmentSkill[];
 }
 export interface EquippedTalisman { slotId: number; position: number; id: number; name: string; weight: number; effect: string }
 export interface CharacterEquipment {
@@ -86,7 +86,7 @@ export interface CharacterInventoryOptions {
 export interface ArmorSetSummary { id: number; name: string; seriesEffect: string; armorCount: number; skillCount: number }
 export interface ArmorDetail {
   id: number; name: string; slot: 'HEAD' | 'BODY'; weight: number; physicalCut: number; phenomenonCut: number; poise: number;
-  armorSet: NamedOption | null; skills: NamedOption[];
+  simpleSkill: string; armorSet: NamedOption | null; skills: NamedOption[];
 }
 export interface TalismanDetail { id: number; name: string; weight: number; effect: string }
 export interface AdminOptions {
