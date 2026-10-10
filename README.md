@@ -43,6 +43,16 @@ npm run cf:dev
 
 `npm run dev`はフロントエンドだけを起動するため、D1 APIを利用する通常の動作確認には`npm run cf:dev`を使用してください。
 
+## 防具表画像のOCR
+
+横倒しで撮影した防具表を補正し、シリーズ効果、頭・胴防具の名前と各数値、装備スキルをJSON（任意でCSV）へ抽出できます。初回実行時はTesseractの日本語学習データを取得するため、ネットワーク接続が必要です。
+
+```powershell
+npm run armor:ocr -- --input "C:\path\to\防具1.jpg" --output sample-data\armor-ocr.json --csv sample-data\armor-ocr.csv --debug-dir .tmp\armor-ocr
+```
+
+出力の各シリーズには`confidence`と`warnings`が含まれます。罫線の傾きや写真の切り取り位置が異なる場合は、`--debug-dir`の`preprocessed.png`と`ocr.tsv`を確認し、列・行の比率を記したJSONを`--layout`で指定してください。既定値は`scripts/lib/armorOcrParser.ts`の`DEFAULT_ARMOR_LAYOUT`です。回転方向が異なる画像には`--rotation 0|90|180|270`を指定します。
+
 ## 検証
 
 ```powershell
