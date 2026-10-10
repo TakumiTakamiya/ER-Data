@@ -83,7 +83,7 @@ export interface CharacterLearnedSkill extends FullSkill { rowId: number; positi
 export interface CharacterInventoryOptions {
   weapons: EquipmentCandidate[]; shields: EquipmentCandidate[]; armors: EquipmentCandidate[]; talismans: EquipmentCandidate[]; skillSets: (NamedOption & { quantity:number; notes:string })[];
 }
-export interface ArmorSetSummary { id: number; name: string; seriesEffect: string; armorCount: number; skillCount: number }
+export interface ArmorSetSummary { id: number; name: string; seriesEffect: string; armorCount: number; skillCount: number; skills: NamedOption[] }
 export interface ArmorDetail {
   id: number; name: string; slot: 'HEAD' | 'BODY'; weight: number; physicalCut: number; phenomenonCut: number; poise: number;
   simpleSkill: string; armorSet: NamedOption | null; skills: NamedOption[];

@@ -5,6 +5,7 @@
   import SingleEquipPicker from './lib/SingleEquipPicker.svelte';
   import SkillCatalog from './lib/SkillCatalog.svelte';
   import ArmorCatalog from './lib/ArmorCatalog.svelte';
+  import ArmorSetCatalog from './lib/ArmorSetCatalog.svelte';
   import ArmorCsvImport from './lib/ArmorCsvImport.svelte';
   import TalismanCatalog from './lib/TalismanCatalog.svelte';
   import AdventureWorkspace from './lib/AdventureWorkspace.svelte';
@@ -13,9 +14,9 @@
   import { armorCreatePayload, emptyArmorCreateForm, type ArmorCreateForm, type ArmorDraft } from './lib/armorForm';
   import { weaponCategorySizes, withWeaponCategorySize } from './lib/weaponCategoryForm';
   import { combinedCategoryOptions, combinedCategorySelection, splitCategorySelection } from './lib/skillCategorySelection';
-  import { deleteJson, getJson, sendJson } from './lib/api';
+  import { getJson, sendJson } from './lib/api';
   import { adminKindForPath, type AdminKind } from './lib/router';
-  import { abilityKeys, type AbilityKey, type AbilityValues, type Adventure, type AdventureDetail, type AdminOptions, type ArmorSetSummary, type CharacterDetail, type CharacterInput, type CharacterSummary, type EpisodeStatus, type Origin, type OriginSkill, type SkillDetail } from './lib/types';
+  import { abilityKeys, type AbilityKey, type AbilityValues, type Adventure, type AdventureDetail, type AdminOptions, type CharacterDetail, type CharacterInput, type CharacterSummary, type EpisodeStatus, type Origin, type OriginSkill, type SkillDetail } from './lib/types';
 
   const abilityLabels: Record<AbilityKey,string>={vigor:'生命力',mind:'精神力',endurance:'持久力',strength:'筋力',dexterity:'技量',intelligence:'知力',faith:'信仰',arcane:'神秘'};
   const dieFaces=['⚀️','⚁️','⚂️','⚃️','⚄️','⚅️'];
@@ -25,7 +26,7 @@
   const adminSections=[
     {title:'冒険',items:[['エピソードを追加','/admin/episodes/new','メイン・外伝エピソードを登録'],['特別なアイテムを追加','/admin/special-items/new','冒険で共有するアイテム種別を登録']]},
     {title:'素性',items:[['素性を追加','/admin/origins/new','初期能力値と初期装備を登録']]},
-    {title:'防具',items:[['防具を追加','/admin/armors/new','頭・胴体防具を登録'],['防具一覧','/admin/armors','検索・詳細・編集・削除'],['防具セットを追加','/admin/armor-sets/new','シリーズ効果を登録'],['防具セット一覧','/admin/armor-sets','登録内容の確認・削除']]},
+    {title:'防具',items:[['防具を追加','/admin/armors/new','頭・胴体防具を登録'],['防具一覧','/admin/armors','検索・詳細・編集・削除'],['防具セットを追加','/admin/armor-sets/new','シリーズ効果を登録'],['防具セット一覧','/admin/armor-sets','検索・詳細・編集・削除']]},
     {title:'装備（武器・盾・タリスマン）',items:[['武器を追加','/admin/weapons/new','武器データを登録'],['武器カテゴリを追加','/admin/weapon-categories/new','武器種別と攻撃性能を登録'],['盾を追加','/admin/shields/new','盾データを登録'],['盾カテゴリを追加','/admin/shield-categories/new','盾種別を登録'],['タリスマンを追加','/admin/talismans/new','名前と効果を登録'],['タリスマン一覧','/admin/talismans','検索・詳細・編集・削除']]},
     {title:'スキル関連',items:[['スキルを追加','/admin/skills/new','スキルデータを登録'],['スキル一覧','/admin/skills','検索・詳細・編集・削除'],['スキルセットを追加','/admin/skill-sets/new','スキルの組み合わせを登録']]},
     {title:'遺灰',items:[['遺灰を追加','/admin/spirit-ashes/new','遺灰データを登録']]}
@@ -33,7 +34,7 @@
 
   let path=window.location.pathname;
   let busy=false,errorMessage='',successMessage='';
-  let adventures:Adventure[]=[],origins:Origin[]=[],characters:CharacterSummary[]=[],armorSets:ArmorSetSummary[]=[],character:CharacterDetail|null=null,adventure:AdventureDetail|null=null,options:AdminOptions|null=null;
+  let adventures:Adventure[]=[],origins:Origin[]=[],characters:CharacterSummary[]=[],character:CharacterDetail|null=null,adventure:AdventureDetail|null=null,options:AdminOptions|null=null;
   let characterForm=emptyCharacter();
   let viewedSkill:OriginSkill|null=null;
   let adventureForm={name:'',memo:''};
@@ -91,7 +92,6 @@
       else if(adventureId)adventure=await getJson<AdventureDetail>(`/api/adventures/${adventureId}`);
       else if(path==='/adventures/new')adventureForm={name:'',memo:''};
       if(path.startsWith('/admin'))options=await getJson<AdminOptions>('/api/admin/options');
-      if(path==='/admin/armor-sets')armorSets=await getJson<ArmorSetSummary[]>('/api/admin/armor-sets');
     }catch(error){message(error);}finally{busy=false;}
   }
   async function saveCharacter(){
@@ -106,16 +106,6 @@
   async function setEpisodeStatus(episodeId:number,status:EpisodeStatus){if(!adventure)return;errorMessage='';try{await sendJson(`/api/adventures/${adventure.id}/episodes/${episodeId}`,'PUT',{status});adventure={...adventure,episodes:adventure.episodes.map(episode=>episode.id===episodeId?{...episode,status}:episode)};}catch(error){message(error);}}
   async function saveAdmin(){if(!adminKind)return;busy=true;errorMessage='';try{const payload=adminKind==='armors'?armorCreatePayload(adminForm as unknown as ArmorCreateForm):adminForm;await sendJson(`/api/admin/${adminKind}`,'POST',payload);successMessage=`${adminLabels[adminKind]}を登録しました。`;adminForm=initialAdmin(adminKind);armorSetQuery='';options=await getJson<AdminOptions>('/api/admin/options');}catch(error){message(error);}finally{busy=false;}}
   function armorImportComplete(result:{armorSets:number;armors:number}){successMessage=`${result.armorSets}シリーズ、${result.armors}件の防具を登録しました。`;errorMessage='';void load();}
-  async function removeArmorSet(armorSet:ArmorSetSummary){
-    if(!window.confirm(`防具セット「${armorSet.name}」を削除しますか？\nこのセットを使っている防具は、セット未指定になります。`))return;
-    busy=true;errorMessage='';successMessage='';
-    try{
-      await deleteJson<{ok:boolean}>(`/api/admin/armor-sets/${armorSet.id}`);
-      armorSets=armorSets.filter(item=>item.id!==armorSet.id);
-      options=await getJson<AdminOptions>('/api/admin/options');
-      successMessage=`防具セット「${armorSet.name}」を削除しました。`;
-    }catch(error){message(error);}finally{busy=false;}
-  }
   function selectArmorSet(id:number|''){adminForm.armorSetId=id;adminForm={...adminForm};}
   onMount(()=>{const pop=()=>{prepareRoute(window.location.pathname);path=window.location.pathname;void load();};window.addEventListener('popstate',pop);void load();return()=>window.removeEventListener('popstate',pop);});
 </script>
@@ -149,8 +139,7 @@
   {:else if path==='/admin/'||path==='/admin'}
     <div class="toolbar"><div><p class="eyebrow">MASTER DATA</p><h2>管理メニュー</h2></div></div><div class="admin-sections">{#each adminSections as section}<section class="admin-section"><h3>{section.title}</h3><div class="admin-grid">{#each section.items as item}<button class="record-card" onclick={()=>go(item[1])}><strong>{item[0]}</strong><span>{item[2]}</span></button>{/each}</div></section>{/each}</div>
   {:else if path==='/admin/armor-sets'}
-    <div class="toolbar"><div><p class="eyebrow">MASTER DATA</p><h2>防具セット一覧</h2><p class="muted">{armorSets.length} 件の防具セット</p></div><div class="toolbar-actions"><button class="button button--quiet" onclick={()=>go('/admin/')}>管理メニュー</button><button class="button button--primary" onclick={()=>go('/admin/armor-sets/new')}>新規追加</button></div></div>
-    {#if armorSets.length}<div class="armor-set-list">{#each armorSets as armorSet}<article class="card armor-set-item"><div><p class="eyebrow">ARMOR SET #{armorSet.id}</p><h3>{armorSet.name}</h3><p class="armor-set-item__effect">{armorSet.seriesEffect||'シリーズ効果なし'}</p><p class="armor-set-item__meta">所属防具 {armorSet.armorCount} 件 · 装備スキル {armorSet.skillCount} 件</p></div><button class="button button--danger" onclick={()=>void removeArmorSet(armorSet)} disabled={busy}>削除</button></article>{/each}</div>{:else if !busy}<section class="empty-state card"><h3>防具セットはまだありません</h3><p>「新規追加」から最初の防具セットを登録できます。</p></section>{/if}
+    <ArmorSetCatalog {options} onNavigate={go} onChanged={()=>void load()} />
   {:else if path==='/admin/skills'}
     <SkillCatalog {options} onNavigate={go} onDuplicate={duplicateSkill} onChanged={()=>void load()} />
   {:else if path==='/admin/armors'}

@@ -112,7 +112,7 @@
 | URL | 実装 | 機能 |
 |---|---|---|
 | `/admin/armors` | `ArmorCatalog.svelte` | 検索、詳細、編集、削除。 |
-| `/admin/armor-sets` | `App.svelte` | 一覧、件数表示、削除。 |
+| `/admin/armor-sets` | `ArmorSetCatalog.svelte` | 名前・シリーズ効果・装備スキルの検索、詳細、編集、削除。 |
 | `/admin/skills` | `SkillCatalog.svelte` | 検索、詳細、編集、削除。 |
 | `/admin/talismans` | `TalismanCatalog.svelte` | 名前・効果の検索、詳細、編集、削除。 |
 
@@ -125,6 +125,7 @@
 - `GuardCutInput.svelte`: `□*☆*`形式の入力補助。
 - `AdventureWorkspace.svelte`: 冒険編集。
 - `ArmorCatalog.svelte`: 防具一覧/編集/削除。
+- `ArmorSetCatalog.svelte`: 防具セット一覧/検索/編集/削除。
 - `SkillCatalog.svelte`: スキル一覧/編集/削除。
 - `TalismanCatalog.svelte`: タリスマン一覧/編集/削除。
 - `CharacterSheet.svelte`: キャラクター能力値、リソース、装備、スキルの表示・更新。

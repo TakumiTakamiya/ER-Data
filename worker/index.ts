@@ -342,20 +342,31 @@ async function options(db:D1Database){
 }
 
 async function armorSetList(db:D1Database){
-  const rows=(await db.prepare(`SELECT s.id,s.name,s.series_effect,COUNT(DISTINCT a.id) armor_count,COUNT(DISTINCT ask.skill_id) skill_count
-    FROM armor_sets s
-    LEFT JOIN armors a ON a.armor_set_id=s.id
-    LEFT JOIN armor_set_skills ask ON ask.armor_set_id=s.id
-    GROUP BY s.id,s.name,s.series_effect
-    ORDER BY s.id`).all()).results;
-  return json(rows.map(row=>({id:Number(row.id),name:String(row.name),seriesEffect:String(row.series_effect??''),armorCount:Number(row.armor_count),skillCount:Number(row.skill_count)})));
+  const [sets,skills]=await Promise.all([
+    db.prepare(`SELECT s.id,s.name,s.series_effect,COUNT(DISTINCT a.id) armor_count
+      FROM armor_sets s LEFT JOIN armors a ON a.armor_set_id=s.id
+      GROUP BY s.id,s.name,s.series_effect ORDER BY s.id`).all(),
+    db.prepare(`SELECT link.armor_set_id,s.id,s.name FROM armor_set_skills link JOIN skills s ON s.id=link.skill_id ORDER BY s.name`).all()
+  ]);
+  return json(sets.results.map(row=>{const setSkills=skills.results.filter(skill=>skill.armor_set_id===row.id).map(skill=>({id:Number(skill.id),name:String(skill.name)}));return{id:Number(row.id),name:String(row.name),seriesEffect:String(row.series_effect??''),armorCount:Number(row.armor_count),skillCount:setSkills.length,skills:setSkills};}));
 }
 
-async function deleteArmorSet(db:D1Database,path:string){
+async function armorSetById(db:D1Database,request:Request,path:string){
   const id=idFrom(path,/^\/api\/admin\/armor-sets\/(\d+)$/);
   if(!await db.prepare('SELECT id FROM armor_sets WHERE id=?').bind(id).first())throw new HttpError(404,'NOT_FOUND','防具セットが見つかりません。');
-  await db.prepare('DELETE FROM armor_sets WHERE id=?').bind(id).run();
-  return json({ok:true});
+  if(request.method==='DELETE'){
+    await db.prepare('DELETE FROM armor_sets WHERE id=?').bind(id).run();
+    return json({ok:true});
+  }
+  if(request.method!=='PUT')throw new HttpError(405,'METHOD_NOT_ALLOWED','未対応の操作です。');
+  const input=await body(request),name=text(input,'name'),skillIds=ids(input,'skillIds');
+  await assertReferences(db,skillIds.map(skillId=>['skills',skillId]));
+  const statements=[
+    db.prepare('UPDATE armor_sets SET name=?,series_effect=? WHERE id=?').bind(name,text(input,'seriesEffect',true),id),
+    db.prepare('DELETE FROM armor_set_skills WHERE armor_set_id=?').bind(id)
+  ];
+  skillIds.forEach(skillId=>statements.push(db.prepare('INSERT INTO armor_set_skills(armor_set_id,skill_id) VALUES(?,?)').bind(id,skillId)));
+  await db.batch(statements);return json({ok:true});
 }
 
 async function armorList(db:D1Database){
@@ -583,7 +594,7 @@ async function route(request:Request,env:Env){
   if(path==='/api/admin/talismans'&&request.method==='GET')return talismanList(env.DB);
   if(/^\/api\/admin\/talismans\/\d+$/.test(path))return talismanById(env.DB,request,path);
   if(path==='/api/admin/armor-sets'&&request.method==='GET')return armorSetList(env.DB);
-  if(/^\/api\/admin\/armor-sets\/\d+$/.test(path)&&request.method==='DELETE')return deleteArmorSet(env.DB,path);
+  if(/^\/api\/admin\/armor-sets\/\d+$/.test(path))return armorSetById(env.DB,request,path);
   const admin=path.match(/^\/api\/admin\/(episodes|special-items|origins|armors|armor-sets|weapons|weapon-categories|shields|shield-categories|talismans|skills|skill-sets|spirit-ashes)$/);if(admin&&request.method==='POST')return adminCreate(env.DB,request,admin[1]);
   throw new HttpError(404,'NOT_FOUND','APIが見つかりません。');
 }

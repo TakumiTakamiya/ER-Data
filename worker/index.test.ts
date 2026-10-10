@@ -3,9 +3,9 @@ import worker from './index';
 
 class Statement {
   values: unknown[] = [];
-  constructor(public sql: string) {}
+  constructor(public sql: string, private result: Record<string, unknown> | null = null) {}
   bind(...values: unknown[]) { this.values = values; return this; }
-  async first() { return null; }
+  async first() { return this.result; }
   async all() { return { results: [], success: true }; }
   async run() { return { results: [], success: true }; }
 }
@@ -14,6 +14,13 @@ class Database {
   batches: Statement[][] = [];
   prepare(sql: string) { return new Statement(sql); }
   async batch(statements: Statement[]) { this.batches.push(statements); return []; }
+}
+
+class ExistingArmorSetDatabase extends Database {
+  prepare(sql: string) {
+    const exists = sql.includes('SELECT id FROM armor_sets') || sql.includes('SELECT id FROM skills');
+    return new Statement(sql, exists ? { id: 1 } : null);
+  }
 }
 
 const row = (seriesName: string) => ({
@@ -48,5 +55,24 @@ describe('armor CSV import API', () => {
 
     expect(response.status).toBe(400);
     expect(db.batches).toHaveLength(0);
+  });
+});
+
+describe('armor set API', () => {
+  it('updates its name, effect, and linked skills together', async () => {
+    const db = new ExistingArmorSetDatabase();
+    const response = await worker.fetch(new Request('https://example.test/api/admin/armor-sets/7', {
+      method: 'PUT', body: JSON.stringify({ name: '騎士', seriesEffect: '強靭＋☆', skillIds: [3, 5] })
+    }), { DB: db, ASSETS: { fetch: async () => new Response() } } as never);
+
+    expect(response.status).toBe(200);
+    expect(db.batches).toHaveLength(1);
+    expect(db.batches[0].map(statement => statement.sql)).toEqual([
+      expect.stringContaining('UPDATE armor_sets'),
+      expect.stringContaining('DELETE FROM armor_set_skills'),
+      expect.stringContaining('INSERT INTO armor_set_skills'),
+      expect.stringContaining('INSERT INTO armor_set_skills')
+    ]);
+    expect(db.batches[0][0].values).toEqual(['騎士', '強靭＋☆', 7]);
   });
 });

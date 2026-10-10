@@ -102,7 +102,7 @@ npx wrangler deploy --dry-run
 - `POST /api/admin/episodes`
 - `POST /api/admin/special-items`
 - `GET /api/admin/armor-sets`
-- `DELETE /api/admin/armor-sets/:id`
+- `PUT/DELETE /api/admin/armor-sets/:id`
 - `GET /api/admin/armors`
 - `POST /api/admin/armors/import`
 - `PUT/DELETE /api/admin/armors/:id`

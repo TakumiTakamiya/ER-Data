@@ -145,11 +145,6 @@ button { color: inherit; }
 .admin-sections { display: grid; gap: 2rem; }
 .admin-section { padding-top: .2rem; }
 .admin-section > h3 { margin: 0 0 .8rem; padding-bottom: .45rem; border-bottom: 1px solid var(--color-border); color: var(--color-accent-bright); font-size: 1rem; letter-spacing: .08em; }
-.armor-set-list { display: grid; gap: 1rem; }
-.armor-set-item { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 1.5rem; align-items: center; padding: 1.3rem 1.5rem; }
-.armor-set-item h3 { margin: .15rem 0 .5rem; font-size: 1.25rem; }
-.armor-set-item__effect { margin: 0; white-space: pre-wrap; }
-.armor-set-item__meta { margin: .65rem 0 0; color: var(--color-muted); font-size: .78rem; }
 .skill-search { margin-bottom: 1rem; }
 .skill-catalog { display: grid; grid-template-columns: 18rem minmax(0,1fr); min-height: 38rem; }
 .skill-catalog__list { border-right: 0; overflow-y: auto; }
@@ -493,8 +488,6 @@ legend { color: var(--color-accent); }
   .panel-heading { align-items: stretch; flex-direction: column; }
   .form-grid { grid-template-columns: 1fr; }
   .field--wide, .field--full { grid-column: auto; }
-  .armor-set-item { grid-template-columns: 1fr; }
-  .armor-set-item .button { width: 100%; }
   .origin-preview__heading { align-items: start; flex-direction: column; }
   .skill-dialog__meta { grid-template-columns: 1fr; }
   .special-item-grid { grid-template-columns: 1fr; }
