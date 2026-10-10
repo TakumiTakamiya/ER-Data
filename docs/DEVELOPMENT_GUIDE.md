@@ -64,6 +64,7 @@ npm run cf:dev
 | POST | `/api/admin/episodes` | エピソード追加 |
 | POST | `/api/admin/special-items` | 特別なアイテム追加 |
 | GET/POST | `/api/admin/armors` | 防具一覧/頭・胴防具の一括追加 |
+| POST | `/api/admin/armors/import` | CSV形式の防具セット・頭胴防具を一括追加 |
 | PUT/DELETE | `/api/admin/armors/:id` | 防具更新/削除 |
 | GET/POST | `/api/admin/armor-sets` | 防具セット一覧/追加 |
 | DELETE | `/api/admin/armor-sets/:id` | 防具セット削除 |

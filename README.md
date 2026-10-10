@@ -53,6 +53,10 @@ npm run armor:ocr -- --input "C:\path\to\防具1.jpg" --output sample-data\armor
 
 出力の各シリーズには`confidence`と`warnings`が含まれます。罫線の傾きや写真の切り取り位置が異なる場合は、`--debug-dir`の`preprocessed.png`と`ocr.tsv`を確認し、列・行の比率を記したJSONを`--layout`で指定してください。既定値は`scripts/lib/armorOcrParser.ts`の`DEFAULT_ARMOR_LAYOUT`です。回転方向が異なる画像には`--rotation 0|90|180|270`を指定します。
 
+## 防具CSV一括登録
+
+管理画面の「防具を追加」では、シリーズ名・シリーズ効果と頭・胴防具の名前、重量、各カット、強靭値、装備スキルを並べた指定14列のCSVから、防具セットと防具を一括登録できます。UTF-8とShift_JISに対応し、一度に100シリーズまで登録できます。CSVの「頭防具装備スキル」「胴防具装備スキル」はスキルマスターには登録せず、各防具の自由記述の簡易スキルへ保存します。同名の防具セットまたは防具が登録済みの場合は、CSV内の全データを登録せずに終了します。
+
 ## 検証
 
 ```powershell
@@ -100,6 +104,7 @@ npx wrangler deploy --dry-run
 - `GET /api/admin/armor-sets`
 - `DELETE /api/admin/armor-sets/:id`
 - `GET /api/admin/armors`
+- `POST /api/admin/armors/import`
 - `PUT/DELETE /api/admin/armors/:id`
 - `GET /api/admin/skills`
 - `PUT/DELETE /api/admin/skills/:id`

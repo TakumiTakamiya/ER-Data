@@ -5,6 +5,7 @@
   import SingleEquipPicker from './lib/SingleEquipPicker.svelte';
   import SkillCatalog from './lib/SkillCatalog.svelte';
   import ArmorCatalog from './lib/ArmorCatalog.svelte';
+  import ArmorCsvImport from './lib/ArmorCsvImport.svelte';
   import TalismanCatalog from './lib/TalismanCatalog.svelte';
   import AdventureWorkspace from './lib/AdventureWorkspace.svelte';
   import CharacterSheet from './lib/CharacterSheet.svelte';
@@ -104,6 +105,7 @@
   async function saveAdventure(){busy=true;errorMessage='';try{await sendJson(adventureId?`/api/adventures/${adventureId}`:'/api/adventures',adventureId?'PUT':'POST',adventureForm);go('/adventures');}catch(error){message(error);}finally{busy=false;}}
   async function setEpisodeStatus(episodeId:number,status:EpisodeStatus){if(!adventure)return;errorMessage='';try{await sendJson(`/api/adventures/${adventure.id}/episodes/${episodeId}`,'PUT',{status});adventure={...adventure,episodes:adventure.episodes.map(episode=>episode.id===episodeId?{...episode,status}:episode)};}catch(error){message(error);}}
   async function saveAdmin(){if(!adminKind)return;busy=true;errorMessage='';try{const payload=adminKind==='armors'?armorCreatePayload(adminForm as unknown as ArmorCreateForm):adminForm;await sendJson(`/api/admin/${adminKind}`,'POST',payload);successMessage=`${adminLabels[adminKind]}を登録しました。`;adminForm=initialAdmin(adminKind);armorSetQuery='';options=await getJson<AdminOptions>('/api/admin/options');}catch(error){message(error);}finally{busy=false;}}
+  function armorImportComplete(result:{armorSets:number;armors:number}){successMessage=`${result.armorSets}シリーズ、${result.armors}件の防具を登録しました。`;errorMessage='';void load();}
   async function removeArmorSet(armorSet:ArmorSetSummary){
     if(!window.confirm(`防具セット「${armorSet.name}」を削除しますか？\nこのセットを使っている防具は、セット未指定になります。`))return;
     busy=true;errorMessage='';successMessage='';
@@ -156,6 +158,7 @@
   {:else if path==='/admin/talismans'}
     <TalismanCatalog onNavigate={go} onChanged={()=>void load()} />
   {:else if adminKind}
+    {#if adminKind==='armors'}<ArmorCsvImport onImported={armorImportComplete} />{/if}
     <form class="card form" onsubmit={(e)=>{e.preventDefault();void saveAdmin();}}><div class="panel-heading"><div><p class="eyebrow">MASTER DATA</p><h2>{adminLabels[adminKind]}を追加</h2></div><button type="button" class="button button--quiet" onclick={()=>go('/admin/')}>管理メニュー</button></div>
       <div class="form-grid">{#if adminKind!=='armors'}<label class="field field--wide" class:field--full={adminKind==='skills'}><span>名前</span><input bind:value={adminForm.name} onblur={normalizeWeaponCategoryName} required></label>{/if}
       {#if adminKind==='special-items'}<p class="muted field--full">冒険ごとに所持数を管理するアイテム種別を登録します。</p>

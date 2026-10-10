@@ -48,6 +48,7 @@ const idFrom = (path: string, pattern: RegExp) => {
   return id;
 };
 const placeholders = (count: number) => Array.from({ length: count }, () => '?').join(',');
+const chunks = <T>(values:T[],size:number) => Array.from({length:Math.ceil(values.length/size)},(_,index)=>values.slice(index*size,(index+1)*size));
 
 const characterSelect = `SELECT c.*, a.name adventure_name, o.name origin_name,
   o.initial_vigor, o.initial_mind, o.initial_endurance, o.initial_strength,
@@ -382,6 +383,47 @@ async function armorById(db:D1Database,request:Request,path:string){
   await db.batch(statements);return json({ok:true});
 }
 
+async function importArmors(db:D1Database,request:Request){
+  const input=await body(request);const values=input.rows;
+  if(!Array.isArray(values)||!values.length)throw new HttpError(400,'VALIDATION_ERROR','登録する防具データがありません。');
+  if(values.length>100)throw new HttpError(400,'VALIDATION_ERROR','一度に登録できるのは100シリーズまでです。');
+  const seriesNames=new Set<string>(),armorNames=new Set<string>();
+  const rows=values.map((value,index)=>{
+    const row=asObject(value),seriesName=text(row,'seriesName'),seriesEffect=text(row,'seriesEffect',true);
+    if(seriesNames.has(seriesName))throw new HttpError(400,'VALIDATION_ERROR',`${index+2}行目のシリーズ名「${seriesName}」が重複しています。`);
+    seriesNames.add(seriesName);
+    const armor=(key:'head'|'body')=>{
+      const item=asObject(row[key]);const name=text(item,'name');
+      if(armorNames.has(name))throw new HttpError(400,'VALIDATION_ERROR',`${index+2}行目の防具名「${name}」が重複しています。`);
+      armorNames.add(name);
+      return{name,weight:integer(item,'weight'),physicalCut:signedInteger(item,'physicalCut'),phenomenonCut:signedInteger(item,'phenomenonCut'),poise:signedInteger(item,'poise'),simpleSkill:text(item,'simpleSkill',true)};
+    };
+    return{seriesName,seriesEffect,head:armor('head'),body:armor('body')};
+  });
+  const seriesList=[...seriesNames],armorList=[...armorNames];
+  const [setMatches,armorMatches]=await Promise.all([
+    Promise.all(chunks(seriesList,90).map(names=>db.prepare(`SELECT name FROM armor_sets WHERE name IN (${placeholders(names.length)}) LIMIT 1`).bind(...names).first())),
+    Promise.all(chunks(armorList,90).map(names=>db.prepare(`SELECT name FROM armors WHERE name IN (${placeholders(names.length)}) LIMIT 1`).bind(...names).first()))
+  ]);
+  const existingSet=setMatches.find(Boolean),existingArmor=armorMatches.find(Boolean);
+  if(existingSet)throw new HttpError(409,'CONFLICT',`防具セット「${String(existingSet.name)}」は登録済みです。CSV全体の登録を中止しました。`);
+  if(existingArmor)throw new HttpError(409,'CONFLICT',`防具「${String(existingArmor.name)}」は登録済みです。CSV全体の登録を中止しました。`);
+  const statements:D1Statement[]=[];
+  for(const group of chunks(rows,40)){
+    statements.push(db.prepare(`INSERT INTO armor_sets(name,series_effect) VALUES ${group.map(()=>'(?,?)').join(',')}`).bind(...group.flatMap(row=>[row.seriesName,row.seriesEffect])));
+  }
+  const armorRows=rows.flatMap(row=>[
+    {seriesName:row.seriesName,slot:'HEAD',armor:row.head},
+    {seriesName:row.seriesName,slot:'BODY',armor:row.body}
+  ]);
+  for(const group of chunks(armorRows,12)){
+    statements.push(db.prepare(`INSERT INTO armors(armor_set_id,name,armor_slot,weight,physical_cut,phenomenon_cut,poise,simple_skill) VALUES
+      ${group.map(()=>'((SELECT id FROM armor_sets WHERE name=?),?,?,?,?,?,?,?)').join(',')}`).bind(...group.flatMap(({seriesName,slot,armor})=>[seriesName,armor.name,slot,armor.weight,armor.physicalCut,armor.phenomenonCut,armor.poise,armor.simpleSkill])));
+  }
+  await db.batch(statements);
+  return json({armorSets:rows.length,armors:rows.length*2},201);
+}
+
 async function skillList(db:D1Database){
   const [skills,effects,weaponCategories,shieldCategories]=await Promise.all([
     db.prepare('SELECT * FROM skills ORDER BY id').all(),
@@ -533,6 +575,7 @@ async function route(request:Request,env:Env){
   if(/^\/api\/characters\/\d+\/.+/.test(path))return characterAction(env.DB,request,path);
   if(/^\/api\/characters\/\d+$/.test(path))return characterById(env.DB,request,path);
   if(path==='/api/admin/options'&&request.method==='GET')return options(env.DB);
+  if(path==='/api/admin/armors/import'&&request.method==='POST')return importArmors(env.DB,request);
   if(path==='/api/admin/armors'&&request.method==='GET')return armorList(env.DB);
   if(/^\/api\/admin\/armors\/\d+$/.test(path))return armorById(env.DB,request,path);
   if(path==='/api/admin/skills'&&request.method==='GET')return skillList(env.DB);
