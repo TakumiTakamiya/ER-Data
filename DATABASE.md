@@ -119,7 +119,7 @@ adventures
 - `armor_set_id`：所属する防具セット。所属しない場合はNULL
 - `name`：防具名。一意
 - `armor_slot`：`HEAD`または`BODY`
-- `simple_skill`：スキルマスターへ登録しない簡易な装備スキル。空文字可
+- `simple_skill`：スキルマスターへ登録しない自由記述の装備スキル。空文字可
 - `weight`：重量
 - `physical_cut`：物理カット値
 - `phenomenon_cut`：現象カット値

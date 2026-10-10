@@ -430,6 +430,9 @@ legend { color: var(--color-accent); }
 .armor-create-table td { width: calc((100% - 10rem) / 2); }
 .armor-create-table input { width: 100%; border: 1px solid var(--color-border); border-radius: var(--radius-small); padding: .65rem .7rem; background: #16140f; color: var(--color-text); outline: none; }
 .armor-create-table input:focus { border-color: var(--color-accent); box-shadow: 0 0 0 2px rgb(196 168 92 / 15%); }
+.armor-create-table .armor-skill-row td { padding: 0; background: #16140f; }
+.armor-create-table .armor-skill-row textarea { display: block; box-sizing: border-box; width: 100%; min-height: 6.5rem; resize: vertical; border: 0; border-radius: 0; padding: .65rem .7rem; background: transparent; color: var(--color-text); outline: none; }
+.armor-create-table .armor-skill-row textarea:focus { box-shadow: inset 0 0 0 2px var(--color-accent); }
 .armor-set-picker { margin-top: 2rem; }
 .armor-set-picker > h3 { margin-top: 0; }
 .armor-set-picker__options { max-height: 13rem; display: grid; grid-template-columns: repeat(auto-fill,minmax(12rem,1fr)); gap: .5rem; margin-top: .7rem; overflow-y: auto; }
